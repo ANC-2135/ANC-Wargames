@@ -139,7 +139,7 @@ export function App() {
               opacity="0.85"
             />
           </svg>
-          <span className="brand-name">Hexfield</span>
+          <span className="brand-name">ANC Wargames</span>
           <span className="brand-sub">prototype · room #4f2a</span>
         </div>
         <div className="topbar-spacer" />
