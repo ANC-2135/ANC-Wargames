@@ -31,3 +31,18 @@ services:
       - "5173:5173"
     depends_on:
       - server
+
+  db-viewer:
+    # Lightweight web UI for browsing the SQLite DB at http://localhost:8081.
+    # The --read-only flag enforces no writes at the application layer.
+    # The mount is RW (not :ro) because SQLite needs to manage WAL/shm files
+    # even when opened read-only — a read-only mount triggers
+    # "unable to open database file" with the server's WAL-mode DB.
+    image: coleifer/sqlite-web:latest
+    command: sqlite_web -H 0.0.0.0 -p 8080 -x --read-only /data/anc.db
+    volumes:
+      - ./data:/data
+    ports:
+      - "8081:8080"
+    depends_on:
+      - server

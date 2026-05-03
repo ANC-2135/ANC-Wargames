@@ -2,7 +2,7 @@
 
 A browser-based hex-grid wargame prototype. This guide gets it running on your own computer, even if you've never used Node.js, a terminal, or Docker before.
 
-The project is a **monorepo** — one folder containing two apps (a browser client and a backend server) that talk to a small local database. Everything runs inside Docker so you don't have to install or configure those pieces by hand.
+The project is a **monorepo** — one folder containing a browser client, a backend server, and a small built-in database viewer, all of which talk to a local SQLite database. Everything runs inside Docker so you don't have to install or configure those pieces by hand.
 
 ---
 
@@ -71,13 +71,15 @@ yarn dev
 
 The first time you run this it will build two Docker images (~2 minutes). After that, `yarn dev` starts in a few seconds.
 
-When it's ready you'll see two URLs in the terminal — open the **client** one in your browser:
+When it's ready, three things are now running:
 
-```
-client  | ➜  Local:   http://localhost:5173/
-```
+| What        | URL                                              | What it's for                                          |
+| ----------- | ------------------------------------------------ | ------------------------------------------------------ |
+| The game    | <http://localhost:5173/>                         | Open this in your browser to play.                     |
+| The backend | <http://localhost:3001/api/health>               | Behind the scenes — the game talks to it. Should say `{"status":"ok"}`. |
+| DB viewer   | <http://localhost:8081/>                         | A read-only web UI for browsing the database.          |
 
-The game appears. Clicks on the hex grid are saved to a small database file at `./data/anc.db`.
+Clicks on the hex grid are saved to a small database file at `./data/anc.db`. Open the DB viewer to see them land in the **`clicks`** table — handy for confirming the game is talking to the backend.
 
 To stop, press **Ctrl + C** in the terminal, then run `yarn stop` to fully shut the containers down.
 
@@ -101,7 +103,7 @@ You skipped step 4. Run `corepack enable`, then `yarn install`.
 **"Cannot connect to the Docker daemon"**
 Docker Desktop isn't running. Start it from your applications list and wait for the whale icon to go steady.
 
-**"Port 5173 is already in use" or "Port 3001 is already in use"**
+**"Port 5173 is already in use" / "Port 3001 is already in use" / "Port 8081 is already in use"**
 Another program is using that port (probably an old copy of the dev server). Run `yarn stop` first, then `yarn dev` again. If that doesn't work, find and stop whatever else is using the port.
 
 **The browser opens but shows a blank page**
@@ -127,7 +129,7 @@ ANC-Wargames/
 ├── packages/
 │   └── shared/             types shared between client and server
 ├── data/                   the SQLite database file lives here (gitignored)
-├── compose.yaml            tells Docker how to run both apps together
+├── compose.yaml            tells Docker how to run client + server + DB viewer together
 └── package.json            project root with the `yarn dev` script
 ```
 

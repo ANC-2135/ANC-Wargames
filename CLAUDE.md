@@ -4,7 +4,7 @@ Browser-based hex-grid wargame, growing from prototype toward turn-based multipl
 
 ## Commands (run from repo root)
 
-- `yarn dev` — `docker compose up --build`. Brings up both apps; client at `http://localhost:5173/`, server at `http://localhost:3001/`. SQLite file lands in `./data/anc.db` via bind-mount.
+- `yarn dev` — `docker compose up --build`. Brings up three services: client at `http://localhost:5173/`, server at `http://localhost:3001/`, and a read-only sqlite-web DB viewer at `http://localhost:8081/`. SQLite file lands in `./data/anc.db` via bind-mount.
 - `yarn dev:native` — runs both workspaces directly with `tsx watch` / `vite`. Faster feedback than docker; native DB lands at `apps/server/data/anc.db` (different file from the docker one — they don't share state).
 - `yarn typecheck` — typechecks every workspace. **Run after non-trivial changes.**
 - `yarn build` — typecheck + production build of every workspace.
