@@ -1,6 +1,16 @@
 // HUD: minimap, team legend, status bar, controls
 
-const TEAMS = [
+import { useEffect, useRef, useState, type CSSProperties } from 'react';
+import { SQRT3 } from '../lib/hex-math';
+import { PALETTE, type Tile, type TileMap } from '../lib/terrain';
+
+export interface Team {
+  id: string;
+  name: string;
+  color: string;
+}
+
+export const TEAMS: readonly Team[] = [
   { id: 'crimson', name: 'Crimson', color: '#e25555' },
   { id: 'amber',   name: 'Amber',   color: '#e0a23a' },
   { id: 'verdant', name: 'Verdant', color: '#5cc26b' },
@@ -8,30 +18,43 @@ const TEAMS = [
   { id: 'violet',  name: 'Violet',  color: '#9b6fe0' },
   { id: 'slate',   name: 'Slate',   color: '#9aa6b2' },
 ];
-window.TEAMS = TEAMS;
 
-function TeamLegend({ teams, activeId, onSelect, players }) {
+export interface TeamLegendProps {
+  teams: readonly Team[];
+  activeId: string;
+  onSelect: (id: string) => void;
+  players: Record<string, number>;
+}
+
+export function TeamLegend({ teams, activeId, onSelect, players }: TeamLegendProps) {
   return (
     <div className="hud-card team-legend">
       <div className="hud-card-title">
-        <span className="dot" style={{background: '#e8eef6'}}></span>
+        <span className="dot" style={{ background: '#e8eef6' }}></span>
         Teams
       </div>
       <div className="team-list">
-        {teams.map(t => {
+        {teams.map((t) => {
           const active = t.id === activeId;
-          const p = players[t.id] || 0;
+          const p = players[t.id] ?? 0;
           return (
             <button
               key={t.id}
               className={'team-item' + (active ? ' active' : '')}
               onClick={() => onSelect(t.id)}
-              style={{ '--team-color': t.color }}
+              style={{ ['--team-color' as string]: t.color } as CSSProperties}
             >
               <span className="team-swatch" style={{ background: t.color }}>
                 {active && (
                   <svg width="10" height="10" viewBox="0 0 10 10">
-                    <path d="M2 5l2 2 4-5" stroke="#0c0f14" strokeWidth="1.6" fill="none" strokeLinecap="round" strokeLinejoin="round"/>
+                    <path
+                      d="M2 5l2 2 4-5"
+                      stroke="#0c0f14"
+                      strokeWidth="1.6"
+                      fill="none"
+                      strokeLinecap="round"
+                      strokeLinejoin="round"
+                    />
                   </svg>
                 )}
               </span>
@@ -45,9 +68,29 @@ function TeamLegend({ teams, activeId, onSelect, players }) {
     </div>
   );
 }
-window.TeamLegend = TeamLegend;
 
-function StatusBar({ hovered, selected, scale, view, cols, rows, onReset }) {
+export interface View {
+  tx: number;
+  ty: number;
+  scale: number;
+}
+
+export interface Viewport {
+  w: number;
+  h: number;
+}
+
+export interface StatusBarProps {
+  hovered: Tile | null;
+  selected: string | null;
+  scale: number;
+  view: View;
+  cols: number;
+  rows: number;
+  onReset: () => void;
+}
+
+export function StatusBar({ hovered, selected, scale, cols, rows, onReset }: StatusBarProps) {
   return (
     <div className="hud-card status-bar">
       <div className="status-group">
@@ -56,48 +99,78 @@ function StatusBar({ hovered, selected, scale, view, cols, rows, onReset }) {
           {hovered ? `${hovered.q}, ${hovered.r}` : '—'}
         </span>
       </div>
-      <div className="status-divider"/>
+      <div className="status-divider" />
       <div className="status-group">
         <span className="status-label">selected</span>
-        <span className="status-val mono">
-          {selected ? selected : '—'}
-        </span>
+        <span className="status-val mono">{selected ? selected : '—'}</span>
       </div>
-      <div className="status-divider"/>
+      <div className="status-divider" />
       <div className="status-group">
         <span className="status-label">terrain</span>
         <span className="status-val">
-          {hovered ? Terrain.PALETTE[hovered.type].label.toLowerCase() : '—'}
+          {hovered ? PALETTE[hovered.type].label.toLowerCase() : '—'}
         </span>
       </div>
-      <div className="status-divider"/>
+      <div className="status-divider" />
       <div className="status-group">
         <span className="status-label">zoom</span>
         <span className="status-val mono">{(scale * 100).toFixed(0)}%</span>
       </div>
-      <div className="status-divider"/>
+      <div className="status-divider" />
       <div className="status-group">
         <span className="status-label">grid</span>
-        <span className="status-val mono">{cols}×{rows}</span>
+        <span className="status-val mono">
+          {cols}×{rows}
+        </span>
       </div>
       <button className="status-btn" onClick={onReset} title="Reset view (R)">
         <svg width="12" height="12" viewBox="0 0 12 12" fill="none">
-          <path d="M2.5 6a3.5 3.5 0 1 0 1.2-2.65" stroke="currentColor" strokeWidth="1.3" strokeLinecap="round"/>
-          <path d="M2 1.6V4h2.4" stroke="currentColor" strokeWidth="1.3" strokeLinecap="round" strokeLinejoin="round"/>
+          <path
+            d="M2.5 6a3.5 3.5 0 1 0 1.2-2.65"
+            stroke="currentColor"
+            strokeWidth="1.3"
+            strokeLinecap="round"
+          />
+          <path
+            d="M2 1.6V4h2.4"
+            stroke="currentColor"
+            strokeWidth="1.3"
+            strokeLinecap="round"
+            strokeLinejoin="round"
+          />
         </svg>
         reset view
       </button>
     </div>
   );
 }
-window.StatusBar = StatusBar;
+
+export interface MinimapProps {
+  tiles: TileMap;
+  cols: number;
+  rows: number;
+  hexSize: number;
+  view: View | null;
+  viewport: Viewport | null;
+  selected: string | null;
+  teamColor: string;
+}
 
 // Minimap renders a downsampled representation of terrain + viewport rect
-function Minimap({ tiles, cols, rows, hexSize, view, viewport, selected, teamColor, onJump }) {
-  const ref = React.useRef(null);
-  const [size] = React.useState({ w: 200, h: 140 });
+export function Minimap({
+  tiles,
+  cols,
+  rows,
+  hexSize,
+  view,
+  viewport,
+  selected,
+  teamColor,
+}: MinimapProps) {
+  const ref = useRef<HTMLCanvasElement | null>(null);
+  const [size] = useState({ w: 200, h: 140 });
 
-  React.useEffect(() => {
+  useEffect(() => {
     const c = ref.current;
     if (!c) return;
     const dpr = window.devicePixelRatio || 1;
@@ -106,6 +179,7 @@ function Minimap({ tiles, cols, rows, hexSize, view, viewport, selected, teamCol
     c.style.width = size.w + 'px';
     c.style.height = size.h + 'px';
     const ctx = c.getContext('2d');
+    if (!ctx) return;
     ctx.setTransform(dpr, 0, 0, dpr, 0, 0);
     ctx.clearRect(0, 0, size.w, size.h);
 
@@ -114,7 +188,6 @@ function Minimap({ tiles, cols, rows, hexSize, view, viewport, selected, teamCol
     ctx.fillRect(0, 0, size.w, size.h);
 
     // compute world bounds
-    const SQRT3 = Math.sqrt(3);
     const worldW = (cols + 0.5) * SQRT3 * hexSize;
     const worldH = (rows * 1.5 + 0.5) * hexSize;
     const pad = 6;
@@ -128,11 +201,11 @@ function Minimap({ tiles, cols, rows, hexSize, view, viewport, selected, teamCol
     const step = cols * rows > 6000 ? 2 : 1;
     for (const t of tiles.values()) {
       if (step > 1 && ((t.col + t.row) & 1)) continue;
-      const px = (HexMath.SQRT3 * t.q + HexMath.SQRT3 / 2 * t.r) * hexSize + worldW / 2;
-      const py = (1.5 * t.r) * hexSize + hexSize;
+      const px = (SQRT3 * t.q + (SQRT3 / 2) * t.r) * hexSize + worldW / 2;
+      const py = 1.5 * t.r * hexSize + hexSize;
       const x = offX + px * s;
       const y = offY + py * s;
-      const pal = Terrain.PALETTE[t.type];
+      const pal = PALETTE[t.type];
       ctx.fillStyle = pal.fill;
       ctx.fillRect(x - 1, y - 1, 2 * step, 2 * step);
     }
@@ -141,9 +214,10 @@ function Minimap({ tiles, cols, rows, hexSize, view, viewport, selected, teamCol
     if (selected) {
       const t = tiles.get(selected);
       if (t) {
-        const px = (HexMath.SQRT3 * t.q + HexMath.SQRT3 / 2 * t.r) * hexSize + worldW / 2;
-        const py = (1.5 * t.r) * hexSize + hexSize;
-        const x = offX + px * s, y = offY + py * s;
+        const px = (SQRT3 * t.q + (SQRT3 / 2) * t.r) * hexSize + worldW / 2;
+        const py = 1.5 * t.r * hexSize + hexSize;
+        const x = offX + px * s;
+        const y = offY + py * s;
         ctx.fillStyle = teamColor;
         ctx.beginPath();
         ctx.arc(x, y, 3, 0, Math.PI * 2);
@@ -161,11 +235,8 @@ function Minimap({ tiles, cols, rows, hexSize, view, viewport, selected, teamCol
       const vh = viewport.h / view.scale;
       const vx = -view.tx / view.scale;
       const vy = -view.ty / view.scale;
-      // shift origin: world rect's top-left in our minimap is at (offX, offY) but world hex coords go negative.
-      // we drew using px = ... + worldW/2; so a world x of 0 maps to offX + worldW/2 * s.
-      // therefore screen-world x maps to: offX + (vx + worldW/2) * s
       const rx = offX + (vx + worldW / 2 - hexSize) * s;
-      const ry = offY + (vy) * s;
+      const ry = offY + vy * s;
       const rw = vw * s;
       const rh = vh * s;
       ctx.strokeStyle = 'rgba(255,255,255,0.85)';
@@ -179,11 +250,10 @@ function Minimap({ tiles, cols, rows, hexSize, view, viewport, selected, teamCol
   return (
     <div className="hud-card minimap">
       <div className="hud-card-title">
-        <span className="dot" style={{background: '#e8eef6'}}></span>
+        <span className="dot" style={{ background: '#e8eef6' }}></span>
         Map
       </div>
       <canvas ref={ref} className="minimap-canvas" />
     </div>
   );
 }
-window.Minimap = Minimap;

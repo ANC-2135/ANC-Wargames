@@ -1,0 +1,84 @@
+// Axial / pointy-top hex math
+// Reference: https://www.redblobgames.com/grids/hexagons/
+
+export interface Axial {
+  q: number;
+  r: number;
+}
+
+export interface Offset {
+  col: number;
+  row: number;
+}
+
+export interface Pixel {
+  x: number;
+  y: number;
+}
+
+export type HexKey = string;
+
+export const SQRT3 = Math.sqrt(3);
+
+// Pointy-top: width = sqrt(3) * size, height = 2 * size
+// size = "radius" from center to corner
+export function hexToPixel(q: number, r: number, size: number): Pixel {
+  const x = size * (SQRT3 * q + (SQRT3 / 2) * r);
+  const y = size * ((3 / 2) * r);
+  return { x, y };
+}
+
+export function pixelToHex(x: number, y: number, size: number): Axial {
+  const q = ((SQRT3 / 3) * x - (1 / 3) * y) / size;
+  const r = ((2 / 3) * y) / size;
+  return axialRound(q, r);
+}
+
+export function axialRound(q: number, r: number): Axial {
+  const s = -q - r;
+  let rq = Math.round(q);
+  let rr = Math.round(r);
+  const rs = Math.round(s);
+  const dq = Math.abs(rq - q);
+  const dr = Math.abs(rr - r);
+  const ds = Math.abs(rs - s);
+  if (dq > dr && dq > ds) rq = -rr - rs;
+  else if (dr > ds) rr = -rq - rs;
+  return { q: rq, r: rr };
+}
+
+export function hexCorners(cx: number, cy: number, size: number): Array<[number, number]> {
+  const pts: Array<[number, number]> = [];
+  for (let i = 0; i < 6; i++) {
+    const angle = (Math.PI / 180) * (60 * i - 30); // pointy-top
+    pts.push([cx + size * Math.cos(angle), cy + size * Math.sin(angle)]);
+  }
+  return pts;
+}
+
+// For an offset/rectangular layout: convert (col, row) on the underlying
+// rectangular grid to axial (q, r) — using "odd-r" offset (every odd row shifted right).
+export function offsetToAxial(col: number, row: number): Axial {
+  const q = col - ((row - (row & 1)) >> 1);
+  const r = row;
+  return { q, r };
+}
+
+export function axialToOffset(q: number, r: number): Offset {
+  const col = q + ((r - (r & 1)) >> 1);
+  const row = r;
+  return { col, row };
+}
+
+export function key(q: number, r: number): HexKey {
+  return q + ',' + r;
+}
+
+export const NEIGHBORS: ReadonlyArray<readonly [number, number]> = [
+  [+1, 0], [+1, -1], [0, -1],
+  [-1, 0], [-1, +1], [0, +1],
+];
+
+export function neighbors(q: number, r: number): Axial[] {
+  return NEIGHBORS.map(([dq, dr]) => ({ q: q + dq, r: r + dr }));
+}

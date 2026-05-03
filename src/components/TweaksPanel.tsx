@@ -1,44 +1,19 @@
-
-// tweaks-panel.jsx
+// tweaks-panel.tsx
 // Reusable Tweaks shell + form-control helpers.
 //
 // Owns the host protocol (listens for __activate_edit_mode / __deactivate_edit_mode,
 // posts __edit_mode_available / __edit_mode_set_keys / __edit_mode_dismissed) so
 // individual prototypes don't re-roll it. Ships a consistent set of controls so you
 // don't hand-draw <input type="range">, segmented radios, steppers, etc.
-//
-// Usage (in an HTML file that loads React + Babel):
-//
-//   const TWEAK_DEFAULTS = /*EDITMODE-BEGIN*/{
-//     "primaryColor": "#D97757",
-//     "fontSize": 16,
-//     "density": "regular",
-//     "dark": false
-//   }/*EDITMODE-END*/;
-//
-//   function App() {
-//     const [t, setTweak] = useTweaks(TWEAK_DEFAULTS);
-//     return (
-//       <div style={{ fontSize: t.fontSize, color: t.primaryColor }}>
-//         Hello
-//         <TweaksPanel>
-//           <TweakSection label="Typography" />
-//           <TweakSlider label="Font size" value={t.fontSize} min={10} max={32} unit="px"
-//                        onChange={(v) => setTweak('fontSize', v)} />
-//           <TweakRadio  label="Density" value={t.density}
-//                        options={['compact', 'regular', 'comfy']}
-//                        onChange={(v) => setTweak('density', v)} />
-//           <TweakSection label="Theme" />
-//           <TweakColor  label="Primary" value={t.primaryColor}
-//                        onChange={(v) => setTweak('primaryColor', v)} />
-//           <TweakToggle label="Dark mode" value={t.dark}
-//                        onChange={(v) => setTweak('dark', v)} />
-//         </TweaksPanel>
-//       </div>
-//     );
-//   }
-//
-// ─────────────────────────────────────────────────────────────────────────────
+
+import {
+  useCallback,
+  useEffect,
+  useRef,
+  useState,
+  type ReactNode,
+  type CSSProperties,
+} from 'react';
 
 const __TWEAKS_STYLE = `
   .twk-panel{position:fixed;right:16px;bottom:16px;z-index:2147483646;width:280px;
@@ -136,17 +111,26 @@ const __TWEAKS_STYLE = `
 // ── useTweaks ───────────────────────────────────────────────────────────────
 // Single source of truth for tweak values. setTweak persists via the host
 // (__edit_mode_set_keys → host rewrites the EDITMODE block on disk).
-function useTweaks(defaults) {
-  const [values, setValues] = React.useState(defaults);
+export type TweakSetter<T> = {
+  <K extends keyof T>(key: K, value: T[K]): void;
+  (edits: Partial<T>): void;
+};
+
+export function useTweaks<T extends Record<string, unknown>>(
+  defaults: T,
+): [T, TweakSetter<T>] {
+  const [values, setValues] = useState<T>(defaults);
   // Accepts either setTweak('key', value) or setTweak({ key: value, ... }) so a
   // useState-style call doesn't write a "[object Object]" key into the persisted
   // JSON block.
-  const setTweak = React.useCallback((keyOrEdits, val) => {
-    const edits = typeof keyOrEdits === 'object' && keyOrEdits !== null
-      ? keyOrEdits : { [keyOrEdits]: val };
+  const setTweak = useCallback(((keyOrEdits: unknown, val?: unknown) => {
+    const edits =
+      typeof keyOrEdits === 'object' && keyOrEdits !== null
+        ? (keyOrEdits as Partial<T>)
+        : ({ [keyOrEdits as string]: val } as Partial<T>);
     setValues((prev) => ({ ...prev, ...edits }));
     window.parent.postMessage({ type: '__edit_mode_set_keys', edits }, '*');
-  }, []);
+  }) as TweakSetter<T>, []);
   return [values, setTweak];
 }
 
@@ -157,16 +141,22 @@ function useTweaks(defaults) {
 // The close button posts __edit_mode_dismissed so the host's toolbar toggle
 // flips off in lockstep; the host echoes __deactivate_edit_mode back which
 // is what actually hides the panel.
-function TweaksPanel({ title = 'Tweaks', children }) {
-  const [open, setOpen] = React.useState(false);
-  const dragRef = React.useRef(null);
-  const offsetRef = React.useRef({ x: 16, y: 16 });
+export interface TweaksPanelProps {
+  title?: string;
+  children?: ReactNode;
+}
+
+export function TweaksPanel({ title = 'Tweaks', children }: TweaksPanelProps) {
+  const [open, setOpen] = useState(false);
+  const dragRef = useRef<HTMLDivElement | null>(null);
+  const offsetRef = useRef({ x: 16, y: 16 });
   const PAD = 16;
 
-  const clampToViewport = React.useCallback(() => {
+  const clampToViewport = useCallback(() => {
     const panel = dragRef.current;
     if (!panel) return;
-    const w = panel.offsetWidth, h = panel.offsetHeight;
+    const w = panel.offsetWidth;
+    const h = panel.offsetHeight;
     const maxRight = Math.max(PAD, window.innerWidth - w - PAD);
     const maxBottom = Math.max(PAD, window.innerHeight - h - PAD);
     offsetRef.current = {
@@ -177,7 +167,7 @@ function TweaksPanel({ title = 'Tweaks', children }) {
     panel.style.bottom = offsetRef.current.y + 'px';
   }, []);
 
-  React.useEffect(() => {
+  useEffect(() => {
     if (!open) return;
     clampToViewport();
     if (typeof ResizeObserver === 'undefined') {
@@ -189,9 +179,9 @@ function TweaksPanel({ title = 'Tweaks', children }) {
     return () => ro.disconnect();
   }, [open, clampToViewport]);
 
-  React.useEffect(() => {
-    const onMsg = (e) => {
-      const t = e?.data?.type;
+  useEffect(() => {
+    const onMsg = (e: MessageEvent) => {
+      const t = (e?.data as { type?: string } | undefined)?.type;
       if (t === '__activate_edit_mode') setOpen(true);
       else if (t === '__deactivate_edit_mode') setOpen(false);
     };
@@ -205,14 +195,15 @@ function TweaksPanel({ title = 'Tweaks', children }) {
     window.parent.postMessage({ type: '__edit_mode_dismissed' }, '*');
   };
 
-  const onDragStart = (e) => {
+  const onDragStart = (e: React.MouseEvent) => {
     const panel = dragRef.current;
     if (!panel) return;
     const r = panel.getBoundingClientRect();
-    const sx = e.clientX, sy = e.clientY;
+    const sx = e.clientX;
+    const sy = e.clientY;
     const startRight = window.innerWidth - r.right;
     const startBottom = window.innerHeight - r.bottom;
-    const move = (ev) => {
+    const move = (ev: MouseEvent) => {
       offsetRef.current = {
         x: startRight - (ev.clientX - sx),
         y: startBottom - (ev.clientY - sy),
@@ -231,13 +222,22 @@ function TweaksPanel({ title = 'Tweaks', children }) {
   return (
     <>
       <style>{__TWEAKS_STYLE}</style>
-      <div ref={dragRef} className="twk-panel" data-noncommentable=""
-           style={{ right: offsetRef.current.x, bottom: offsetRef.current.y }}>
+      <div
+        ref={dragRef}
+        className="twk-panel"
+        data-noncommentable=""
+        style={{ right: offsetRef.current.x, bottom: offsetRef.current.y }}
+      >
         <div className="twk-hd" onMouseDown={onDragStart}>
           <b>{title}</b>
-          <button className="twk-x" aria-label="Close tweaks"
-                  onMouseDown={(e) => e.stopPropagation()}
-                  onClick={dismiss}>✕</button>
+          <button
+            className="twk-x"
+            aria-label="Close tweaks"
+            onMouseDown={(e) => e.stopPropagation()}
+            onClick={dismiss}
+          >
+            ✕
+          </button>
         </div>
         <div className="twk-body">{children}</div>
       </div>
@@ -247,7 +247,12 @@ function TweaksPanel({ title = 'Tweaks', children }) {
 
 // ── Layout helpers ──────────────────────────────────────────────────────────
 
-function TweakSection({ label, children }) {
+export interface TweakSectionProps {
+  label: string;
+  children?: ReactNode;
+}
+
+export function TweakSection({ label, children }: TweakSectionProps) {
   return (
     <>
       <div className="twk-sect">{label}</div>
@@ -256,7 +261,14 @@ function TweakSection({ label, children }) {
   );
 }
 
-function TweakRow({ label, value, children, inline = false }) {
+interface TweakRowProps {
+  label: string;
+  value?: ReactNode;
+  children?: ReactNode;
+  inline?: boolean;
+}
+
+export function TweakRow({ label, value, children, inline = false }: TweakRowProps) {
   return (
     <div className={inline ? 'twk-row twk-row-h' : 'twk-row'}>
       <div className="twk-lbl">
@@ -270,50 +282,112 @@ function TweakRow({ label, value, children, inline = false }) {
 
 // ── Controls ────────────────────────────────────────────────────────────────
 
-function TweakSlider({ label, value, min = 0, max = 100, step = 1, unit = '', onChange }) {
+export interface TweakSliderProps {
+  label: string;
+  value: number;
+  min?: number;
+  max?: number;
+  step?: number;
+  unit?: string;
+  onChange: (v: number) => void;
+}
+
+export function TweakSlider({
+  label,
+  value,
+  min = 0,
+  max = 100,
+  step = 1,
+  unit = '',
+  onChange,
+}: TweakSliderProps) {
   return (
     <TweakRow label={label} value={`${value}${unit}`}>
-      <input type="range" className="twk-slider" min={min} max={max} step={step}
-             value={value} onChange={(e) => onChange(Number(e.target.value))} />
+      <input
+        type="range"
+        className="twk-slider"
+        min={min}
+        max={max}
+        step={step}
+        value={value}
+        onChange={(e) => onChange(Number(e.target.value))}
+      />
     </TweakRow>
   );
 }
 
-function TweakToggle({ label, value, onChange }) {
+export interface TweakToggleProps {
+  label: string;
+  value: boolean;
+  onChange: (v: boolean) => void;
+}
+
+export function TweakToggle({ label, value, onChange }: TweakToggleProps) {
   return (
     <div className="twk-row twk-row-h">
-      <div className="twk-lbl"><span>{label}</span></div>
-      <button type="button" className="twk-toggle" data-on={value ? '1' : '0'}
-              role="switch" aria-checked={!!value}
-              onClick={() => onChange(!value)}><i /></button>
+      <div className="twk-lbl">
+        <span>{label}</span>
+      </div>
+      <button
+        type="button"
+        className="twk-toggle"
+        data-on={value ? '1' : '0'}
+        role="switch"
+        aria-checked={!!value}
+        onClick={() => onChange(!value)}
+      >
+        <i />
+      </button>
     </div>
   );
 }
 
-function TweakRadio({ label, value, options, onChange }) {
-  const trackRef = React.useRef(null);
-  const [dragging, setDragging] = React.useState(false);
-  const opts = options.map((o) => (typeof o === 'object' ? o : { value: o, label: o }));
-  const idx = Math.max(0, opts.findIndex((o) => o.value === value));
+export type RadioOption<V extends string> = V | { value: V; label: string };
+
+export interface TweakRadioProps<V extends string> {
+  label: string;
+  value: V;
+  options: ReadonlyArray<RadioOption<V>>;
+  onChange: (v: V) => void;
+}
+
+export function TweakRadio<V extends string>({
+  label,
+  value,
+  options,
+  onChange,
+}: TweakRadioProps<V>) {
+  const trackRef = useRef<HTMLDivElement | null>(null);
+  const [dragging, setDragging] = useState(false);
+  const opts = options.map((o) =>
+    typeof o === 'object' ? o : ({ value: o, label: o } as { value: V; label: string }),
+  );
+  const idx = Math.max(
+    0,
+    opts.findIndex((o) => o.value === value),
+  );
   const n = opts.length;
 
   // The active value is read by pointer-move handlers attached for the lifetime
   // of a drag — ref it so a stale closure doesn't fire onChange for every move.
-  const valueRef = React.useRef(value);
+  const valueRef = useRef(value);
   valueRef.current = value;
 
-  const segAt = (clientX) => {
-    const r = trackRef.current.getBoundingClientRect();
+  const segAt = (clientX: number): V => {
+    const track = trackRef.current;
+    if (!track) return value;
+    const r = track.getBoundingClientRect();
     const inner = r.width - 4;
     const i = Math.floor(((clientX - r.left - 2) / inner) * n);
-    return opts[Math.max(0, Math.min(n - 1, i))].value;
+    const clamped = Math.max(0, Math.min(n - 1, i));
+    return opts[clamped]!.value;
   };
 
-  const onPointerDown = (e) => {
+  const onPointerDown = (e: React.PointerEvent) => {
     setDragging(true);
     const v0 = segAt(e.clientX);
     if (v0 !== valueRef.current) onChange(v0);
-    const move = (ev) => {
+    const move = (ev: PointerEvent) => {
       if (!trackRef.current) return;
       const v = segAt(ev.clientX);
       if (v !== valueRef.current) onChange(v);
@@ -327,15 +401,27 @@ function TweakRadio({ label, value, options, onChange }) {
     window.addEventListener('pointerup', up);
   };
 
+  const thumbStyle: CSSProperties = {
+    left: `calc(2px + ${idx} * (100% - 4px) / ${n})`,
+    width: `calc((100% - 4px) / ${n})`,
+  };
+
   return (
     <TweakRow label={label}>
-      <div ref={trackRef} role="radiogroup" onPointerDown={onPointerDown}
-           className={dragging ? 'twk-seg dragging' : 'twk-seg'}>
-        <div className="twk-seg-thumb"
-             style={{ left: `calc(2px + ${idx} * (100% - 4px) / ${n})`,
-                      width: `calc((100% - 4px) / ${n})` }} />
+      <div
+        ref={trackRef}
+        role="radiogroup"
+        onPointerDown={onPointerDown}
+        className={dragging ? 'twk-seg dragging' : 'twk-seg'}
+      >
+        <div className="twk-seg-thumb" style={thumbStyle} />
         {opts.map((o) => (
-          <button key={o.value} type="button" role="radio" aria-checked={o.value === value}>
+          <button
+            key={o.value}
+            type="button"
+            role="radio"
+            aria-checked={o.value === value}
+          >
             {o.label}
           </button>
         ))}
@@ -344,41 +430,86 @@ function TweakRadio({ label, value, options, onChange }) {
   );
 }
 
-function TweakSelect({ label, value, options, onChange }) {
+export interface TweakSelectProps {
+  label: string;
+  value: string;
+  options: ReadonlyArray<string | { value: string; label: string }>;
+  onChange: (v: string) => void;
+}
+
+export function TweakSelect({ label, value, options, onChange }: TweakSelectProps) {
   return (
     <TweakRow label={label}>
-      <select className="twk-field" value={value} onChange={(e) => onChange(e.target.value)}>
+      <select
+        className="twk-field"
+        value={value}
+        onChange={(e) => onChange(e.target.value)}
+      >
         {options.map((o) => {
           const v = typeof o === 'object' ? o.value : o;
           const l = typeof o === 'object' ? o.label : o;
-          return <option key={v} value={v}>{l}</option>;
+          return (
+            <option key={v} value={v}>
+              {l}
+            </option>
+          );
         })}
       </select>
     </TweakRow>
   );
 }
 
-function TweakText({ label, value, placeholder, onChange }) {
+export interface TweakTextProps {
+  label: string;
+  value: string;
+  placeholder?: string;
+  onChange: (v: string) => void;
+}
+
+export function TweakText({ label, value, placeholder, onChange }: TweakTextProps) {
   return (
     <TweakRow label={label}>
-      <input className="twk-field" type="text" value={value} placeholder={placeholder}
-             onChange={(e) => onChange(e.target.value)} />
+      <input
+        className="twk-field"
+        type="text"
+        value={value}
+        placeholder={placeholder}
+        onChange={(e) => onChange(e.target.value)}
+      />
     </TweakRow>
   );
 }
 
-function TweakNumber({ label, value, min, max, step = 1, unit = '', onChange }) {
-  const clamp = (n) => {
+export interface TweakNumberProps {
+  label: string;
+  value: number;
+  min?: number;
+  max?: number;
+  step?: number;
+  unit?: string;
+  onChange: (v: number) => void;
+}
+
+export function TweakNumber({
+  label,
+  value,
+  min,
+  max,
+  step = 1,
+  unit = '',
+  onChange,
+}: TweakNumberProps) {
+  const clamp = (n: number): number => {
     if (min != null && n < min) return min;
     if (max != null && n > max) return max;
     return n;
   };
-  const startRef = React.useRef({ x: 0, val: 0 });
-  const onScrubStart = (e) => {
+  const startRef = useRef({ x: 0, val: 0 });
+  const onScrubStart = (e: React.PointerEvent) => {
     e.preventDefault();
     startRef.current = { x: e.clientX, val: value };
-    const decimals = (String(step).split('.')[1] || '').length;
-    const move = (ev) => {
+    const decimals = (String(step).split('.')[1] ?? '').length;
+    const move = (ev: PointerEvent) => {
       const dx = ev.clientX - startRef.current.x;
       const raw = startRef.current.val + dx * step;
       const snapped = Math.round(raw / step) * step;
@@ -393,33 +524,58 @@ function TweakNumber({ label, value, min, max, step = 1, unit = '', onChange }) 
   };
   return (
     <div className="twk-num">
-      <span className="twk-num-lbl" onPointerDown={onScrubStart}>{label}</span>
-      <input type="number" value={value} min={min} max={max} step={step}
-             onChange={(e) => onChange(clamp(Number(e.target.value)))} />
+      <span className="twk-num-lbl" onPointerDown={onScrubStart}>
+        {label}
+      </span>
+      <input
+        type="number"
+        value={value}
+        min={min}
+        max={max}
+        step={step}
+        onChange={(e) => onChange(clamp(Number(e.target.value)))}
+      />
       {unit && <span className="twk-num-unit">{unit}</span>}
     </div>
   );
 }
 
-function TweakColor({ label, value, onChange }) {
+export interface TweakColorProps {
+  label: string;
+  value: string;
+  onChange: (v: string) => void;
+}
+
+export function TweakColor({ label, value, onChange }: TweakColorProps) {
   return (
     <div className="twk-row twk-row-h">
-      <div className="twk-lbl"><span>{label}</span></div>
-      <input type="color" className="twk-swatch" value={value}
-             onChange={(e) => onChange(e.target.value)} />
+      <div className="twk-lbl">
+        <span>{label}</span>
+      </div>
+      <input
+        type="color"
+        className="twk-swatch"
+        value={value}
+        onChange={(e) => onChange(e.target.value)}
+      />
     </div>
   );
 }
 
-function TweakButton({ label, onClick, secondary = false }) {
-  return (
-    <button type="button" className={secondary ? 'twk-btn secondary' : 'twk-btn'}
-            onClick={onClick}>{label}</button>
-  );
+export interface TweakButtonProps {
+  label: string;
+  onClick: () => void;
+  secondary?: boolean;
 }
 
-Object.assign(window, {
-  useTweaks, TweaksPanel, TweakSection, TweakRow,
-  TweakSlider, TweakToggle, TweakRadio, TweakSelect,
-  TweakText, TweakNumber, TweakColor, TweakButton,
-});
+export function TweakButton({ label, onClick, secondary = false }: TweakButtonProps) {
+  return (
+    <button
+      type="button"
+      className={secondary ? 'twk-btn secondary' : 'twk-btn'}
+      onClick={onClick}
+    >
+      {label}
+    </button>
+  );
+}

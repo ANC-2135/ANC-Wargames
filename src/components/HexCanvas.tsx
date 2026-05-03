@@ -1,21 +1,67 @@
 // HexCanvas — pan/zoom canvas hex renderer.
-// Props:
-//   tiles: Map<"q,r", tile>
-//   cols, rows
-//   hexSize, gap
-//   selected: Set<"q,r">
-//   hovered: "q,r" | null
-//   teamColor: string (highlight color for selection)
-//   showCoords: bool
-//   panSpeed, zoomSpeed
-//   onTileClick(tile, evt)
-//   onHover(tile | null)
-//   viewRef: { current: { tx, ty, scale, setView, focus } }
 
-const { useEffect, useRef, useCallback, useState } = React;
+import { useEffect, useRef, type MutableRefObject } from 'react';
+import { hexToPixel, pixelToHex, key } from '../lib/hex-math';
+import { PALETTE, type Tile, type TileMap } from '../lib/terrain';
 
-function HexCanvas({
-  tiles, cols, rows,
+export interface HexView {
+  tx: number;
+  ty: number;
+  scale: number;
+}
+
+export interface HexViewHandle {
+  readonly view: HexView;
+  reset(): void;
+  panBy(dx: number, dy: number): void;
+  zoomBy(factor: number, cx?: number, cy?: number): void;
+}
+
+export type ShowCoords = boolean | 'always';
+
+export interface HexCanvasProps {
+  tiles: TileMap;
+  cols: number;
+  rows: number;
+  hexSize?: number;
+  selected: Set<string>;
+  hovered: string | null;
+  teamColor: string;
+  showCoords: ShowCoords;
+  panSpeed?: number;
+  zoomSpeed?: number;
+  onTileClick?: (tile: Tile | null, evt: PointerEvent) => void;
+  onHover?: (tile: Tile | null) => void;
+  viewRef?: MutableRefObject<HexViewHandle | null>;
+  onViewChange?: (view: HexView) => void;
+}
+
+interface Bounds {
+  minX: number;
+  minY: number;
+  maxX: number;
+  maxY: number;
+  w: number;
+  h: number;
+}
+
+interface DragState {
+  id: number;
+  startX: number;
+  startY: number;
+  lastX: number;
+  lastY: number;
+  moved: boolean;
+  startTx: number;
+  startTy: number;
+}
+
+type LOD = 'hi' | 'md' | 'lo';
+
+export function HexCanvas({
+  tiles,
+  cols: _cols,
+  rows: _rows,
   hexSize = 22,
   selected,
   hovered,
@@ -27,34 +73,86 @@ function HexCanvas({
   onHover,
   viewRef,
   onViewChange,
-}) {
-  const canvasRef = useRef(null);
-  const containerRef = useRef(null);
+}: HexCanvasProps) {
+  void _cols;
+  void _rows;
+  const canvasRef = useRef<HTMLCanvasElement | null>(null);
+  const containerRef = useRef<HTMLDivElement | null>(null);
   // view state lives in a ref to avoid re-rendering on every pan tick
-  const view = useRef({ tx: 0, ty: 0, scale: 1 });
-  const drag = useRef(null);
-  const pinch = useRef(null);
-  const dpr = useRef(window.devicePixelRatio || 1);
-  const sizeRef = useRef({ w: 0, h: 0 });
-  const rafRef = useRef(0);
-  const dirty = useRef(true);
-  const keys = useRef(new Set());
+  const view = useRef<HexView>({ tx: 0, ty: 0, scale: 1 });
+  const drag = useRef<DragState | null>(null);
+  const dpr = useRef<number>(window.devicePixelRatio || 1);
+  const sizeRef = useRef<{ w: number; h: number }>({ w: 0, h: 0 });
+  const rafRef = useRef<number>(0);
+  const dirty = useRef<boolean>(true);
+  const keys = useRef<Set<string>>(new Set());
 
   // Compute world bounding box once
-  const bounds = useRef({ minX: 0, minY: 0, maxX: 0, maxY: 0, w: 0, h: 0 });
+  const bounds = useRef<Bounds>({ minX: 0, minY: 0, maxX: 0, maxY: 0, w: 0, h: 0 });
+
+  function emitView() {
+    if (onViewChange) onViewChange({ ...view.current });
+  }
+
+  function requestDraw() {
+    dirty.current = true;
+    if (rafRef.current) return;
+    rafRef.current = requestAnimationFrame(() => {
+      rafRef.current = 0;
+      if (dirty.current) draw();
+    });
+  }
+
+  function applyZoom(factor: number, cx: number, cy: number) {
+    const v = view.current;
+    const newScale = Math.min(6, Math.max(0.15, v.scale * factor));
+    const k = newScale / v.scale;
+    v.tx = cx - (cx - v.tx) * k;
+    v.ty = cy - (cy - v.ty) * k;
+    v.scale = newScale;
+    requestDraw();
+    emitView();
+  }
+
+  function animateTo(target: HexView) {
+    const start = { ...view.current };
+    const t0 = performance.now();
+    const dur = 350;
+    const tick = (t: number) => {
+      const k = Math.min(1, (t - t0) / dur);
+      const e = k < 0.5 ? 2 * k * k : 1 - Math.pow(-2 * k + 2, 2) / 2;
+      view.current = {
+        tx: start.tx + (target.tx - start.tx) * e,
+        ty: start.ty + (target.ty - start.ty) * e,
+        scale: start.scale + (target.scale - start.scale) * e,
+      };
+      requestDraw();
+      emitView();
+      if (k < 1) requestAnimationFrame(tick);
+    };
+    requestAnimationFrame(tick);
+  }
+
   useEffect(() => {
-    let minX = Infinity, minY = Infinity, maxX = -Infinity, maxY = -Infinity;
+    let minX = Infinity;
+    let minY = Infinity;
+    let maxX = -Infinity;
+    let maxY = -Infinity;
     for (const t of tiles.values()) {
-      const { x, y } = HexMath.hexToPixel(t.q, t.r, hexSize);
-      if (x < minX) minX = x; if (y < minY) minY = y;
-      if (x > maxX) maxX = x; if (y > maxY) maxY = y;
+      const { x, y } = hexToPixel(t.q, t.r, hexSize);
+      if (x < minX) minX = x;
+      if (y < minY) minY = y;
+      if (x > maxX) maxX = x;
+      if (y > maxY) maxY = y;
     }
     const pad = hexSize * 2;
     bounds.current = {
-      minX: minX - pad, minY: minY - pad,
-      maxX: maxX + pad, maxY: maxY + pad,
-      w: (maxX - minX) + pad * 2,
-      h: (maxY - minY) + pad * 2,
+      minX: minX - pad,
+      minY: minY - pad,
+      maxX: maxX + pad,
+      maxY: maxY + pad,
+      w: maxX - minX + pad * 2,
+      h: maxY - minY + pad * 2,
     };
     requestDraw();
   }, [tiles, hexSize]);
@@ -63,6 +161,7 @@ function HexCanvas({
   useEffect(() => {
     const el = containerRef.current;
     const canvas = canvasRef.current;
+    if (!el || !canvas) return;
     const ro = new ResizeObserver(() => {
       const rect = el.getBoundingClientRect();
       sizeRef.current = { w: rect.width, h: rect.height };
@@ -91,7 +190,6 @@ function HexCanvas({
       requestDraw();
       emitView();
     };
-    // Try to fit once we have size & bounds
     const id = setInterval(() => {
       if (sizeRef.current.w && bounds.current.w) {
         fit();
@@ -105,7 +203,9 @@ function HexCanvas({
   useEffect(() => {
     if (!viewRef) return;
     viewRef.current = {
-      get view() { return view.current; },
+      get view() {
+        return view.current;
+      },
       reset() {
         const { w, h } = sizeRef.current;
         const b = bounds.current;
@@ -114,81 +214,68 @@ function HexCanvas({
         const ty = (h - b.h * scale) / 2 - b.minY * scale;
         animateTo({ tx, ty, scale });
       },
-      panBy(dx, dy) {
-        view.current.tx += dx; view.current.ty += dy;
-        requestDraw(); emitView();
+      panBy(dx: number, dy: number) {
+        view.current.tx += dx;
+        view.current.ty += dy;
+        requestDraw();
+        emitView();
       },
-      zoomBy(factor, cx, cy) {
+      zoomBy(factor: number, cx?: number, cy?: number) {
         const { w, h } = sizeRef.current;
-        cx = cx ?? w / 2; cy = cy ?? h / 2;
-        applyZoom(factor, cx, cy);
+        const ux = cx ?? w / 2;
+        const uy = cy ?? h / 2;
+        applyZoom(factor, ux, uy);
       },
     };
   });
 
-  function emitView() {
-    if (onViewChange) onViewChange({ ...view.current });
-  }
-
-  function animateTo(target) {
-    const start = { ...view.current };
-    const t0 = performance.now();
-    const dur = 350;
-    const tick = (t) => {
-      const k = Math.min(1, (t - t0) / dur);
-      const e = k < 0.5 ? 2 * k * k : 1 - Math.pow(-2 * k + 2, 2) / 2;
-      view.current = {
-        tx: start.tx + (target.tx - start.tx) * e,
-        ty: start.ty + (target.ty - start.ty) * e,
-        scale: start.scale + (target.scale - start.scale) * e,
-      };
-      requestDraw();
-      emitView();
-      if (k < 1) requestAnimationFrame(tick);
-    };
-    requestAnimationFrame(tick);
-  }
-
-  function applyZoom(factor, cx, cy) {
-    const v = view.current;
-    const newScale = Math.min(6, Math.max(0.15, v.scale * factor));
-    const k = newScale / v.scale;
-    v.tx = cx - (cx - v.tx) * k;
-    v.ty = cy - (cy - v.ty) * k;
-    v.scale = newScale;
-    requestDraw();
-    emitView();
-  }
-
   // ---- Pointer / wheel ----
   useEffect(() => {
     const canvas = canvasRef.current;
+    if (!canvas) return;
 
-    const onPointerDown = (e) => {
+    function screenToWorldLocal(lx: number, ly: number) {
+      const v = view.current;
+      return { x: (lx - v.tx) / v.scale, y: (ly - v.ty) / v.scale };
+    }
+    function pickTileLocal(lx: number, ly: number): Tile | null {
+      const { x, y } = screenToWorldLocal(lx, ly);
+      const { q, r } = pixelToHex(x, y, hexSize);
+      return tiles.get(key(q, r)) ?? null;
+    }
+
+    const onPointerDown = (e: PointerEvent) => {
       canvas.setPointerCapture(e.pointerId);
       drag.current = {
         id: e.pointerId,
-        startX: e.clientX, startY: e.clientY,
-        lastX: e.clientX, lastY: e.clientY,
+        startX: e.clientX,
+        startY: e.clientY,
+        lastX: e.clientX,
+        lastY: e.clientY,
         moved: false,
-        startTx: view.current.tx, startTy: view.current.ty,
+        startTx: view.current.tx,
+        startTy: view.current.ty,
       };
     };
 
-    const onPointerMove = (e) => {
+    const onPointerMove = (e: PointerEvent) => {
       const rect = canvas.getBoundingClientRect();
-      const lx = e.clientX - rect.left, ly = e.clientY - rect.top;
-      // hover detection
+      const lx = e.clientX - rect.left;
+      const ly = e.clientY - rect.top;
       if (!drag.current) {
-        const tile = pickTile(lx, ly);
-        onHover && onHover(tile);
+        const tile = pickTileLocal(lx, ly);
+        onHover?.(tile);
       }
       if (drag.current && drag.current.id === e.pointerId) {
         const dx = (e.clientX - drag.current.lastX) * panSpeed;
         const dy = (e.clientY - drag.current.lastY) * panSpeed;
         drag.current.lastX = e.clientX;
         drag.current.lastY = e.clientY;
-        if (Math.abs(e.clientX - drag.current.startX) + Math.abs(e.clientY - drag.current.startY) > 4) {
+        if (
+          Math.abs(e.clientX - drag.current.startX) +
+            Math.abs(e.clientY - drag.current.startY) >
+          4
+        ) {
           drag.current.moved = true;
         }
         view.current.tx += dx;
@@ -198,39 +285,39 @@ function HexCanvas({
       }
     };
 
-    const onPointerUp = (e) => {
+    const onPointerUp = (e: PointerEvent) => {
       if (drag.current && drag.current.id === e.pointerId) {
         const wasClick = !drag.current.moved;
         drag.current = null;
         if (wasClick) {
           const rect = canvas.getBoundingClientRect();
-          const lx = e.clientX - rect.left, ly = e.clientY - rect.top;
-          const tile = pickTile(lx, ly);
-          onTileClick && onTileClick(tile, e);
+          const lx = e.clientX - rect.left;
+          const ly = e.clientY - rect.top;
+          const tile = pickTileLocal(lx, ly);
+          onTileClick?.(tile, e);
         }
       }
     };
 
-    const onWheel = (e) => {
+    const onWheel = (e: WheelEvent) => {
       e.preventDefault();
       const rect = canvas.getBoundingClientRect();
-      const cx = e.clientX - rect.left, cy = e.clientY - rect.top;
-      // Trackpad pinch sends ctrlKey + wheel
+      const cx = e.clientX - rect.left;
+      const cy = e.clientY - rect.top;
       if (e.ctrlKey) {
         const factor = Math.exp(-e.deltaY * 0.01 * zoomSpeed);
         applyZoom(factor, cx, cy);
       } else if (e.shiftKey) {
-        // shift+wheel to pan horizontally
         view.current.tx -= e.deltaY * panSpeed;
-        requestDraw(); emitView();
+        requestDraw();
+        emitView();
       } else {
-        // normal wheel = zoom
         const factor = Math.exp(-e.deltaY * 0.0015 * zoomSpeed);
         applyZoom(factor, cx, cy);
       }
     };
 
-    const onLeave = () => onHover && onHover(null);
+    const onLeave = () => onHover?.(null);
 
     canvas.addEventListener('pointerdown', onPointerDown);
     canvas.addEventListener('pointermove', onPointerMove);
@@ -246,12 +333,12 @@ function HexCanvas({
       canvas.removeEventListener('pointerleave', onLeave);
       canvas.removeEventListener('wheel', onWheel);
     };
-  }, [panSpeed, zoomSpeed, onTileClick, onHover, tiles]);
+  }, [panSpeed, zoomSpeed, onTileClick, onHover, tiles, hexSize]);
 
   // ---- Keyboard pan ----
   useEffect(() => {
-    const onKey = (e) => {
-      if (['ArrowUp','ArrowDown','ArrowLeft','ArrowRight'].includes(e.key)) {
+    const onKey = (e: KeyboardEvent) => {
+      if (['ArrowUp', 'ArrowDown', 'ArrowLeft', 'ArrowRight'].includes(e.key)) {
         keys.current.add(e.key);
         e.preventDefault();
       } else if (e.key === '+' || e.key === '=') {
@@ -262,14 +349,15 @@ function HexCanvas({
         applyZoom(1 / 1.15, w / 2, h / 2);
       }
     };
-    const onUp = (e) => keys.current.delete(e.key);
+    const onUp = (e: KeyboardEvent) => keys.current.delete(e.key);
     window.addEventListener('keydown', onKey);
     window.addEventListener('keyup', onUp);
 
     let last = performance.now();
     let frame = 0;
-    const tick = (t) => {
-      const dt = Math.min(50, t - last); last = t;
+    const tick = (t: number) => {
+      const dt = Math.min(50, t - last);
+      last = t;
       const k = keys.current;
       if (k.size) {
         const speed = 0.6 * dt * panSpeed;
@@ -277,7 +365,8 @@ function HexCanvas({
         if (k.has('ArrowRight')) view.current.tx -= speed;
         if (k.has('ArrowUp')) view.current.ty += speed;
         if (k.has('ArrowDown')) view.current.ty -= speed;
-        requestDraw(); emitView();
+        requestDraw();
+        emitView();
       }
       frame = requestAnimationFrame(tick);
     };
@@ -289,35 +378,17 @@ function HexCanvas({
     };
   }, [panSpeed]);
 
-  // ---- Hit-test ----
-  function screenToWorld(lx, ly) {
-    const v = view.current;
-    return { x: (lx - v.tx) / v.scale, y: (ly - v.ty) / v.scale };
-  }
-  function pickTile(lx, ly) {
-    const { x, y } = screenToWorld(lx, ly);
-    const { q, r } = HexMath.pixelToHex(x, y, hexSize);
-    return tiles.get(HexMath.key(q, r)) || null;
-  }
-
-  // ---- Draw ----
-  function requestDraw() {
-    dirty.current = true;
-    if (rafRef.current) return;
-    rafRef.current = requestAnimationFrame(() => {
-      rafRef.current = 0;
-      if (dirty.current) draw();
-    });
-  }
-
   // re-draw whenever inputs change
-  useEffect(() => { requestDraw(); }, [selected, hovered, teamColor, showCoords, hexSize, tiles]);
+  useEffect(() => {
+    requestDraw();
+  }, [selected, hovered, teamColor, showCoords, hexSize, tiles]);
 
   function draw() {
     dirty.current = false;
     const canvas = canvasRef.current;
     if (!canvas) return;
     const ctx = canvas.getContext('2d');
+    if (!ctx) return;
     const { w, h } = sizeRef.current;
     if (!w || !h) return;
     const v = view.current;
@@ -331,7 +402,14 @@ function HexCanvas({
     ctx.fillRect(0, 0, w, h);
 
     // world transform on top of dpr
-    ctx.setTransform(dpr.current * v.scale, 0, 0, dpr.current * v.scale, dpr.current * v.tx, dpr.current * v.ty);
+    ctx.setTransform(
+      dpr.current * v.scale,
+      0,
+      0,
+      dpr.current * v.scale,
+      dpr.current * v.tx,
+      dpr.current * v.ty,
+    );
 
     // visible-world rect
     const inv = 1 / v.scale;
@@ -342,15 +420,20 @@ function HexCanvas({
     const margin = hexSize * 2;
 
     // LOD: at very low zoom skip texture detail
-    const lod = v.scale > 0.6 ? 'hi' : v.scale > 0.3 ? 'md' : 'lo';
+    const lod: LOD = v.scale > 0.6 ? 'hi' : v.scale > 0.3 ? 'md' : 'lo';
 
     // Stroke width in world units
     const strokeW = Math.max(0.5, 1 / v.scale);
 
     for (const tile of tiles.values()) {
-      const { x: cx, y: cy } = HexMath.hexToPixel(tile.q, tile.r, hexSize);
-      if (cx + hexSize < visMinX - margin || cx - hexSize > visMaxX + margin ||
-          cy + hexSize < visMinY - margin || cy - hexSize > visMaxY + margin) continue;
+      const { x: cx, y: cy } = hexToPixel(tile.q, tile.r, hexSize);
+      if (
+        cx + hexSize < visMinX - margin ||
+        cx - hexSize > visMaxX + margin ||
+        cy + hexSize < visMinY - margin ||
+        cy - hexSize > visMaxY + margin
+      )
+        continue;
 
       drawHex(ctx, tile, cx, cy, hexSize, lod, strokeW);
     }
@@ -359,7 +442,7 @@ function HexCanvas({
     if (hovered) {
       const t = tiles.get(hovered);
       if (t) {
-        const { x: cx, y: cy } = HexMath.hexToPixel(t.q, t.r, hexSize);
+        const { x: cx, y: cy } = hexToPixel(t.q, t.r, hexSize);
         drawHexOutline(ctx, cx, cy, hexSize * 0.98, '#ffffff', 1.5 / v.scale, 0.55);
       }
     }
@@ -369,8 +452,7 @@ function HexCanvas({
       for (const k of selected) {
         const t = tiles.get(k);
         if (!t) continue;
-        const { x: cx, y: cy } = HexMath.hexToPixel(t.q, t.r, hexSize);
-        // glow fill
+        const { x: cx, y: cy } = hexToPixel(t.q, t.r, hexSize);
         ctx.save();
         traceHex(ctx, cx, cy, hexSize * 0.96);
         ctx.fillStyle = teamColor + '55';
@@ -388,14 +470,22 @@ function HexCanvas({
       ctx.textAlign = 'center';
       ctx.textBaseline = 'middle';
       const showAll = showCoords === 'always';
-      const targets = new Set();
+      const targets = new Set<string>();
       if (hovered) targets.add(hovered);
       if (selected) for (const k of selected) targets.add(k);
-      const iter = showAll ? tiles.values() : Array.from(targets).map(k => tiles.get(k)).filter(Boolean);
+      const iter: Iterable<Tile | undefined> = showAll
+        ? tiles.values()
+        : Array.from(targets).map((k) => tiles.get(k));
       for (const t of iter) {
         if (!t) continue;
-        const { x: cx, y: cy } = HexMath.hexToPixel(t.q, t.r, hexSize);
-        if (cx < visMinX - margin || cx > visMaxX + margin || cy < visMinY - margin || cy > visMaxY + margin) continue;
+        const { x: cx, y: cy } = hexToPixel(t.q, t.r, hexSize);
+        if (
+          cx < visMinX - margin ||
+          cx > visMaxX + margin ||
+          cy < visMinY - margin ||
+          cy > visMaxY + margin
+        )
+          continue;
         ctx.fillStyle = 'rgba(255,255,255,0.85)';
         ctx.fillText(`${t.q},${t.r}`, cx, cy);
       }
@@ -403,18 +493,28 @@ function HexCanvas({
     }
   }
 
-  function traceHex(ctx, cx, cy, size) {
+  function traceHex(ctx: CanvasRenderingContext2D, cx: number, cy: number, size: number) {
     ctx.beginPath();
     for (let i = 0; i < 6; i++) {
-      const a = Math.PI / 180 * (60 * i - 30);
-      const x = cx + size * Math.cos(a), y = cy + size * Math.sin(a);
-      if (i === 0) ctx.moveTo(x, y); else ctx.lineTo(x, y);
+      const a = (Math.PI / 180) * (60 * i - 30);
+      const x = cx + size * Math.cos(a);
+      const y = cy + size * Math.sin(a);
+      if (i === 0) ctx.moveTo(x, y);
+      else ctx.lineTo(x, y);
     }
     ctx.closePath();
   }
 
-  function drawHex(ctx, tile, cx, cy, size, lod, strokeW) {
-    const pal = Terrain.PALETTE[tile.type];
+  function drawHex(
+    ctx: CanvasRenderingContext2D,
+    tile: Tile,
+    cx: number,
+    cy: number,
+    size: number,
+    lod: LOD,
+    strokeW: number,
+  ) {
+    const pal = PALETTE[tile.type];
     traceHex(ctx, cx, cy, size * 0.985);
     ctx.fillStyle = pal.fill;
     ctx.fill();
@@ -424,7 +524,6 @@ function HexCanvas({
       ctx.save();
       ctx.clip();
       if (tile.type === 'water' || tile.type === 'deep_water') {
-        // horizontal ripple lines
         ctx.strokeStyle = pal.accent;
         ctx.globalAlpha = 0.35;
         ctx.lineWidth = Math.max(0.4, size * 0.05);
@@ -436,7 +535,6 @@ function HexCanvas({
           ctx.stroke();
         }
       } else if (tile.type === 'forest') {
-        // 2 little tree dots
         ctx.fillStyle = pal.edge;
         const r = size * 0.18;
         ctx.beginPath();
@@ -450,7 +548,6 @@ function HexCanvas({
         ctx.arc(cx - size * 0.22, cy - size * 0.02, r * 0.55, 0, Math.PI * 2);
         ctx.fill();
       } else if (tile.type === 'mountain') {
-        // triangle peak
         ctx.fillStyle = pal.accent;
         ctx.beginPath();
         ctx.moveTo(cx - size * 0.45, cy + size * 0.35);
@@ -485,13 +582,12 @@ function HexCanvas({
           ctx.fill();
         }
       } else if (tile.type === 'grass' || tile.type === 'plains') {
-        // subtle blade flecks
         ctx.strokeStyle = pal.accent;
         ctx.globalAlpha = 0.45;
         ctx.lineWidth = Math.max(0.3, size * 0.05);
         for (let i = 0; i < 3; i++) {
-          const ax = cx + ((i * 37 + tile.col * 13) % 100 / 100 - 0.5) * size * 0.8;
-          const ay = cy + ((i * 53 + tile.row * 17) % 100 / 100 - 0.5) * size * 0.8;
+          const ax = cx + ((((i * 37 + tile.col * 13) % 100) / 100 - 0.5) * size * 0.8);
+          const ay = cy + ((((i * 53 + tile.row * 17) % 100) / 100 - 0.5) * size * 0.8);
           ctx.beginPath();
           ctx.moveTo(ax, ay + size * 0.08);
           ctx.lineTo(ax, ay - size * 0.08);
@@ -507,7 +603,15 @@ function HexCanvas({
     ctx.stroke();
   }
 
-  function drawHexOutline(ctx, cx, cy, size, color, lineW, alpha = 1) {
+  function drawHexOutline(
+    ctx: CanvasRenderingContext2D,
+    cx: number,
+    cy: number,
+    size: number,
+    color: string,
+    lineW: number,
+    alpha = 1,
+  ) {
     ctx.save();
     ctx.globalAlpha = alpha;
     traceHex(ctx, cx, cy, size);
@@ -524,5 +628,3 @@ function HexCanvas({
     </div>
   );
 }
-
-window.HexCanvas = HexCanvas;
