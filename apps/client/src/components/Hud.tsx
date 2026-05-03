@@ -187,9 +187,14 @@ export function Minimap({
     ctx.fillStyle = '#0a0e13';
     ctx.fillRect(0, 0, size.w, size.h);
 
-    // compute world bounds
+    // World→minimap mapping. Tiles in the main canvas live at world coords
+    // produced by hexToPixel (offsetToAxial layout: q=0 sits at the left edge,
+    // odd rows shift right by SQRT3/2 * hexSize, r=0 sits at y=0).
+    // The minimap is just that world, scaled and shifted by a small padding.
     const worldW = (cols + 0.5) * SQRT3 * hexSize;
     const worldH = (rows * 1.5 + 0.5) * hexSize;
+    const padOffX = (SQRT3 / 2) * hexSize; // half-hex left pad (odd-row shift)
+    const padOffY = hexSize;                // half-hex top pad (top vertex)
     const pad = 6;
     const sx = (size.w - pad * 2) / worldW;
     const sy = (size.h - pad * 2) / worldH;
@@ -197,14 +202,18 @@ export function Minimap({
     const offX = pad + (size.w - pad * 2 - worldW * s) / 2;
     const offY = pad + (size.h - pad * 2 - worldH * s) / 2;
 
+    const worldToMinimap = (wx: number, wy: number): [number, number] => [
+      offX + (wx + padOffX) * s,
+      offY + (wy + padOffY) * s,
+    ];
+
     // draw a downsampled version: every other tile if grid is large
     const step = cols * rows > 6000 ? 2 : 1;
     for (const t of tiles.values()) {
       if (step > 1 && ((t.col + t.row) & 1)) continue;
-      const px = (SQRT3 * t.q + (SQRT3 / 2) * t.r) * hexSize + worldW / 2;
-      const py = 1.5 * t.r * hexSize + hexSize;
-      const x = offX + px * s;
-      const y = offY + py * s;
+      const wx = (SQRT3 * t.q + (SQRT3 / 2) * t.r) * hexSize;
+      const wy = 1.5 * t.r * hexSize;
+      const [x, y] = worldToMinimap(wx, wy);
       const pal = PALETTE[t.type];
       ctx.fillStyle = pal.fill;
       ctx.fillRect(x - 1, y - 1, 2 * step, 2 * step);
@@ -214,10 +223,9 @@ export function Minimap({
     if (selected) {
       const t = tiles.get(selected);
       if (t) {
-        const px = (SQRT3 * t.q + (SQRT3 / 2) * t.r) * hexSize + worldW / 2;
-        const py = 1.5 * t.r * hexSize + hexSize;
-        const x = offX + px * s;
-        const y = offY + py * s;
+        const wx = (SQRT3 * t.q + (SQRT3 / 2) * t.r) * hexSize;
+        const wy = 1.5 * t.r * hexSize;
+        const [x, y] = worldToMinimap(wx, wy);
         ctx.fillStyle = teamColor;
         ctx.beginPath();
         ctx.arc(x, y, 3, 0, Math.PI * 2);
@@ -228,15 +236,13 @@ export function Minimap({
       }
     }
 
-    // viewport rect
+    // viewport rect — top-left of the visible main-canvas region in world coords.
     if (view && viewport) {
-      // viewport in world coords
       const vw = viewport.w / view.scale;
       const vh = viewport.h / view.scale;
       const vx = -view.tx / view.scale;
       const vy = -view.ty / view.scale;
-      const rx = offX + (vx + worldW / 2 - hexSize) * s;
-      const ry = offY + vy * s;
+      const [rx, ry] = worldToMinimap(vx, vy);
       const rw = vw * s;
       const rh = vh * s;
       ctx.strokeStyle = 'rgba(255,255,255,0.85)';
