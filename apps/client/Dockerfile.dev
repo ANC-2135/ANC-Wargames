@@ -1,0 +1,17 @@
+FROM node:20-bookworm-slim
+
+ENV CI=1
+RUN corepack enable
+
+WORKDIR /repo
+
+# Workspace install: copy lock + package manifests, install once.
+COPY package.json yarn.lock .yarnrc.yml ./
+COPY apps/client/package.json apps/client/package.json
+COPY apps/server/package.json apps/server/package.json
+COPY packages/shared/package.json packages/shared/package.json
+RUN yarn install --immutable
+
+WORKDIR /repo/apps/client
+EXPOSE 5173
+CMD ["yarn", "dev"]

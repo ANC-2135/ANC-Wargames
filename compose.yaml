@@ -1,0 +1,33 @@
+services:
+  server:
+    build:
+      context: .
+      dockerfile: apps/server/Dockerfile.dev
+    environment:
+      PORT: 3001
+      DB_PATH: /data/anc.db
+    volumes:
+      # Bind source for hot reload, but keep node_modules from the image.
+      - ./apps/server/src:/repo/apps/server/src
+      - ./packages/shared/src:/repo/packages/shared/src
+      - ./data:/data
+    ports:
+      - "3001:3001"
+
+  client:
+    build:
+      context: .
+      dockerfile: apps/client/Dockerfile.dev
+    environment:
+      VITE_API_TARGET: http://server:3001
+      VITE_USE_POLLING: "1"
+    volumes:
+      - ./apps/client/src:/repo/apps/client/src
+      - ./apps/client/public:/repo/apps/client/public
+      - ./apps/client/index.html:/repo/apps/client/index.html
+      - ./apps/client/vite.config.ts:/repo/apps/client/vite.config.ts
+      - ./packages/shared/src:/repo/packages/shared/src
+    ports:
+      - "5173:5173"
+    depends_on:
+      - server

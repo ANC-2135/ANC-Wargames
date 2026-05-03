@@ -1,6 +1,8 @@
 # ANC Wargames
 
-A browser-based hex-grid wargame prototype. This guide gets it running on your own computer, even if you've never used Node.js or a terminal before.
+A browser-based hex-grid wargame prototype. This guide gets it running on your own computer, even if you've never used Node.js, a terminal, or Docker before.
+
+The project is a **monorepo** — one folder containing two apps (a browser client and a backend server) that talk to a small local database. Everything runs inside Docker so you don't have to install or configure those pieces by hand.
 
 ---
 
@@ -10,124 +12,133 @@ You only need to do this part once per computer.
 
 ### 1. Install Node.js
 
-Node.js is the engine that runs the development tools. We need it to start the game in your browser.
+Node.js is the engine that runs the development tools.
 
 1. Go to **<https://nodejs.org/>**.
-2. Click the big green button on the **left** that says **LTS** (Long-Term Support).
-3. Run the installer you just downloaded. Accept all the default options.
-4. **Close every terminal / command prompt window you have open.** New terminals will see Node.js; old ones won't.
+2. Click the big green button on the **left** that says **LTS**.
+3. Run the installer and accept all defaults.
+4. **Close every terminal window you have open.** New terminals will see Node.js; old ones won't.
 
-### 2. Open a terminal in this project folder
+### 2. Install Docker Desktop
 
-You need to open a terminal whose "current folder" is the folder this README lives in.
+Docker is what runs the client and server side-by-side without you having to set them up individually.
 
-- **Windows:** open **File Explorer**, navigate into this folder, right-click an empty area, and choose **"Open in Terminal"** (Windows 11) or **"Open PowerShell window here"** (Windows 10).
-- **macOS:** open **Finder**, right-click this folder, and choose **"New Terminal at Folder"**. (If you don't see that option: open **System Settings → Keyboard → Keyboard Shortcuts → Services**, and enable **"New Terminal at Folder"**.)
-- **Linux:** open your terminal, then `cd` into this folder, e.g. `cd ~/Projects/ANC-Wargames`.
+- **Windows / macOS:** download **Docker Desktop** from <https://www.docker.com/products/docker-desktop/>, install it, and start it. The first launch can take a minute — wait until the Docker icon in your tray shows a steady whale (not animated).
+- **Linux:** install Docker Engine and the Compose plugin. Distro-specific instructions are at <https://docs.docker.com/engine/install/>.
 
-### 3. Install the project's libraries
-
-In that terminal, run:
+Verify it's working — open a fresh terminal and run:
 
 ```sh
-npm install
+docker --version
+docker compose version
 ```
 
-This downloads everything the project needs into a folder called `node_modules`. It takes about a minute the first time and is much faster after that. You don't need to do this again unless somebody updates `package.json`.
+Both should print version numbers.
+
+### 3. Open a terminal in this project folder
+
+You need a terminal whose "current folder" is the folder this README lives in.
+
+- **Windows:** open **File Explorer**, navigate into this folder, right-click an empty area, choose **"Open in Terminal"**.
+- **macOS:** in **Finder**, right-click this folder, choose **"New Terminal at Folder"** (enable in System Settings → Keyboard → Keyboard Shortcuts → Services if you don't see it).
+- **Linux:** open your terminal, then `cd` into this folder.
+
+### 4. Turn on Yarn
+
+This project uses **Yarn 4** (a package manager). Node.js ships with a tool called Corepack that activates the right version of Yarn automatically. Run this **once**:
+
+```sh
+corepack enable
+```
+
+Then install all the libraries:
+
+```sh
+yarn install
+```
+
+This downloads everything into a `node_modules` folder. Takes about a minute the first time. You only need to re-run it if somebody updates `package.json`.
 
 ---
 
 ## Every time you want to run the game
 
-1. In a terminal in this folder, run:
+In a terminal in this folder, run:
 
-   ```sh
-   npm run dev
-   ```
+```sh
+yarn dev
+```
 
-2. After a moment, the terminal will print something like:
+The first time you run this it will build two Docker images (~2 minutes). After that, `yarn dev` starts in a few seconds.
 
-   ```
-   ➜  Local:   http://localhost:5173/
-   ```
+When it's ready you'll see two URLs in the terminal — open the **client** one in your browser:
 
-   Click that link, or copy it into your browser. The game should appear.
+```
+client  | ➜  Local:   http://localhost:5173/
+```
 
-3. Any time you save a change to a file in `src/`, the browser will reload automatically — you don't need to restart anything.
+The game appears. Clicks on the hex grid are saved to a small database file at `./data/anc.db`.
 
-4. To stop the server, click in the terminal window and press **Ctrl + C** (on macOS too — not Cmd).
+To stop, press **Ctrl + C** in the terminal, then run `yarn stop` to fully shut the containers down.
+
+### Faster reloads (no Docker)
+
+If you're actively editing code and want the fastest possible reload, you can skip Docker entirely:
+
+```sh
+yarn dev:native
+```
+
+This runs the client and server directly on your machine. The trade-off: the database file lands at `apps/server/data/anc.db` (not `./data/anc.db`), so the two modes don't share state.
 
 ---
 
 ## Common problems
 
-**"`npm` is not recognized" / "command not found: npm"**
-Node.js didn't install correctly, or the terminal you're using was open before you installed it. Close every terminal window, open a brand-new one, and try `npm install` again. If it still fails, re-download and re-install Node.js from <https://nodejs.org/>.
+**`yarn` is not recognized / `command not found: yarn`**
+You skipped step 4. Run `corepack enable`, then `yarn install`.
 
-**"Port 5173 is already in use"**
-Another program (or another copy of the dev server) is already using that port. Either close the other one, or pick a different port:
+**"Cannot connect to the Docker daemon"**
+Docker Desktop isn't running. Start it from your applications list and wait for the whale icon to go steady.
 
-```sh
-npm run dev -- --port 5174
-```
-
-Then open `http://localhost:5174/` instead.
+**"Port 5173 is already in use" or "Port 3001 is already in use"**
+Another program is using that port (probably an old copy of the dev server). Run `yarn stop` first, then `yarn dev` again. If that doesn't work, find and stop whatever else is using the port.
 
 **The browser opens but shows a blank page**
-Open the browser's developer tools (press **F12**, or right-click the page and choose **Inspect**), click the **Console** tab, and copy any red text you see there. Send that to whoever set up the project.
+Open the browser's developer tools (press **F12**), click the **Console** tab, and copy any red text you see. Send it to whoever set up the project.
 
 **A change I made doesn't show up**
 Hard-refresh the browser: **Ctrl + Shift + R** (Windows/Linux) or **Cmd + Shift + R** (macOS).
 
----
-
-## Optional: build a shareable copy
-
-If you want a copy of the game that can be hosted anywhere (e.g. uploaded to a static web host), run:
-
-```sh
-npm run build
-```
-
-That puts a fully self-contained version in a new `dist/` folder. To preview it locally, run:
-
-```sh
-npm run preview
-```
-
-…and open the link the terminal prints.
+**I want to wipe the database and start fresh**
+Stop everything (`yarn stop`), then delete the `data/` folder. Linux/macOS may need `sudo rm -rf data/` because Docker creates files as root.
 
 ---
 
-## Project layout
+## What's where
 
-You don't need this section to run the game — it's here for whoever edits the code.
+You don't need this to run the game — it's here for whoever edits the code.
 
 ```
 ANC-Wargames/
-├── index.html              entry HTML (loads src/main.tsx)
-├── package.json            project config — lists dependencies and scripts
-├── tsconfig.*.json         TypeScript settings
-├── vite.config.ts          dev-server / build settings
-├── public/assets/          images and other static files (served at /assets/...)
-└── src/
-    ├── main.tsx            mounts the React app
-    ├── App.tsx             top-level <App /> component
-    ├── styles.css          page styles
-    ├── lib/
-    │   ├── hex-math.ts     pointy-top hex grid math
-    │   └── terrain.ts      seeded terrain generation
-    └── components/
-        ├── HexCanvas.tsx   pan/zoom canvas renderer
-        ├── Hud.tsx         team legend, minimap, status bar
-        └── TweaksPanel.tsx floating live-tweak panel
+├── apps/
+│   ├── client/             browser app (React + Vite + TypeScript)
+│   └── server/             backend (Fastify + SQLite)
+├── packages/
+│   └── shared/             types shared between client and server
+├── data/                   the SQLite database file lives here (gitignored)
+├── compose.yaml            tells Docker how to run both apps together
+└── package.json            project root with the `yarn dev` script
 ```
 
 ### Available commands
 
-| Command             | What it does                                                                |
-| ------------------- | --------------------------------------------------------------------------- |
-| `npm run dev`       | Start the dev server with hot reload at <http://localhost:5173/>.           |
-| `npm run build`     | Type-check and build a production bundle into `dist/`.                      |
-| `npm run preview`   | Serve the contents of `dist/` to verify the production build locally.       |
-| `npm run typecheck` | Run TypeScript without producing files — useful as a quick correctness check. |
+| Command            | What it does                                                                       |
+| ------------------ | ---------------------------------------------------------------------------------- |
+| `yarn dev`         | Build + start both apps in Docker. Open <http://localhost:5173/>.                  |
+| `yarn dev:native`  | Run both apps directly on your machine (no Docker). Faster reload, separate DB.    |
+| `yarn stop`        | Shut down the Docker containers.                                                   |
+| `yarn typecheck`   | Run TypeScript across every workspace — quick correctness check.                   |
+| `yarn build`       | Type-check and produce production builds for every workspace.                      |
+
+To target a single workspace: `yarn workspace @anc/client typecheck`, `yarn workspace @anc/server dev`, etc.

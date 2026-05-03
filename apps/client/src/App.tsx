@@ -9,6 +9,7 @@ import {
 } from 'react';
 import { generate } from './lib/terrain';
 import { key } from './lib/hex-math';
+import { postClick } from './api';
 import { HexCanvas, type HexView, type HexViewHandle } from './components/HexCanvas';
 import { TEAMS, TeamLegend, Minimap, StatusBar } from './components/Hud';
 import {
@@ -81,8 +82,10 @@ export function App() {
       }
       const k = key(tile.q, tile.r);
       setSelected((prev) => (prev === k ? null : k));
+      // Smoke-test wiring: log every click to the server.
+      void postClick({ teamId: activeTeam, q: tile.q, r: tile.r });
     },
-    [],
+    [activeTeam],
   );
 
   const handleHover = useCallback((tile: { q: number; r: number } | null) => {

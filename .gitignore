@@ -3,3 +3,15 @@ dist/
 .vite/
 *.local
 .DS_Store
+
+# yarn 4 (node-modules linker)
+.yarn/*
+!.yarn/patches
+!.yarn/plugins
+!.yarn/releases
+!.yarn/sdks
+!.yarn/versions
+.pnp.*
+
+# SQLite data dirs (host bind-mount + native dev location)
+data/

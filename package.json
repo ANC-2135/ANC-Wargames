@@ -2,22 +2,16 @@
   "name": "anc-wargames",
   "private": true,
   "version": "0.0.0",
-  "type": "module",
+  "packageManager": "yarn@4.5.3",
+  "workspaces": [
+    "apps/*",
+    "packages/*"
+  ],
   "scripts": {
-    "dev": "vite",
-    "build": "tsc -b && vite build",
-    "preview": "vite preview",
-    "typecheck": "tsc -b --noEmit"
-  },
-  "dependencies": {
-    "react": "^18.3.1",
-    "react-dom": "^18.3.1"
-  },
-  "devDependencies": {
-    "@types/react": "^18.3.12",
-    "@types/react-dom": "^18.3.1",
-    "@vitejs/plugin-react-swc": "^3.7.2",
-    "typescript": "^5.6.3",
-    "vite": "^5.4.11"
+    "dev": "docker compose up --build",
+    "dev:native": "yarn workspaces foreach --all --parallel --interlaced --jobs unlimited run dev",
+    "build": "yarn workspaces foreach --all --topological-dev run build",
+    "typecheck": "yarn workspaces foreach --all --topological-dev run typecheck",
+    "stop": "docker compose down"
   }
 }
