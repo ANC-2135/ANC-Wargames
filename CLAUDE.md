@@ -45,7 +45,7 @@ If strict TS flags either, fix the types around them, not the protocol.
 
 ## Conventions
 
-- **Hex math**: pointy-top, axial coords. `key(q, r)` from `apps/client/src/lib/hex-math.ts` produces the `"q,r"` string used as the canonical `Map` key everywhere — always go through it, don't hand-format.
+- **Hex math**: flat-top, axial coords. `key(q, r)` from `apps/client/src/lib/hex-math.ts` produces the `"q,r"` string used as the canonical `Map` key everywhere — always go through it, don't hand-format.
 - **Assets**: drop static files in `apps/client/public/assets/`; reference them as `/assets/...` in code (Vite serves `public/` at root).
 - **Modules**: `src/lib/` = pure logic, no React; `src/components/` = React. No `window.X = X` globals — everything imports.
 - **API endpoints**: namespaced under `/api/*`. Validate inputs with zod via `fastify-type-provider-zod`; transform DB row shape (snake_case) to API shape (camelCase) at the route boundary, never expose raw rows.

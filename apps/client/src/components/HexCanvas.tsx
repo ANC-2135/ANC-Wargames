@@ -490,7 +490,7 @@ export function HexCanvas({
   function traceHex(ctx: CanvasRenderingContext2D, cx: number, cy: number, size: number) {
     ctx.beginPath();
     for (let i = 0; i < 6; i++) {
-      const a = (Math.PI / 180) * (60 * i - 30);
+      const a = (Math.PI / 180) * (60 * i);
       const x = cx + size * Math.cos(a);
       const y = cy + size * Math.sin(a);
       if (i === 0) ctx.moveTo(x, y);

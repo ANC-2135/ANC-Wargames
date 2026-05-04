@@ -1,4 +1,4 @@
-// Axial / pointy-top hex math
+// Axial / flat-top hex math
 // Reference: https://www.redblobgames.com/grids/hexagons/
 
 export interface Axial {
@@ -20,17 +20,17 @@ export type HexKey = string;
 
 export const SQRT3 = Math.sqrt(3);
 
-// Pointy-top: width = sqrt(3) * size, height = 2 * size
+// Flat-top: width = 2 * size, height = sqrt(3) * size
 // size = "radius" from center to corner
 export function hexToPixel(q: number, r: number, size: number): Pixel {
-  const x = size * (SQRT3 * q + (SQRT3 / 2) * r);
-  const y = size * ((3 / 2) * r);
+  const x = size * ((3 / 2) * q);
+  const y = size * ((SQRT3 / 2) * q + SQRT3 * r);
   return { x, y };
 }
 
 export function pixelToHex(x: number, y: number, size: number): Axial {
-  const q = ((SQRT3 / 3) * x - (1 / 3) * y) / size;
-  const r = ((2 / 3) * y) / size;
+  const q = ((2 / 3) * x) / size;
+  const r = (-(1 / 3) * x + (SQRT3 / 3) * y) / size;
   return axialRound(q, r);
 }
 
@@ -50,7 +50,7 @@ export function axialRound(q: number, r: number): Axial {
 export function hexCorners(cx: number, cy: number, size: number): Array<[number, number]> {
   const pts: Array<[number, number]> = [];
   for (let i = 0; i < 6; i++) {
-    const angle = (Math.PI / 180) * (60 * i - 30); // pointy-top
+    const angle = (Math.PI / 180) * (60 * i); // flat-top
     pts.push([cx + size * Math.cos(angle), cy + size * Math.sin(angle)]);
   }
   return pts;
