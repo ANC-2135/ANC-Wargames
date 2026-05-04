@@ -1,6 +1,6 @@
 // Seeded value-noise terrain. Returns a Map keyed by "q,r" → terrain object.
 
-import { offsetToAxial, key, type HexKey } from './hex-math';
+import { hexDistance, hexShapeAxials, key, type HexKey } from './hex-math';
 
 export type TerrainType =
   | 'deep_water'
@@ -15,8 +15,6 @@ export type TerrainType =
 export interface Tile {
   q: number;
   r: number;
-  col: number;
-  row: number;
   type: TerrainType;
   elev: number;
   moist: number;
@@ -76,55 +74,39 @@ function makeValueNoise(seed: number, scale: number): NoiseFn {
   };
 }
 
-// Layered: elevation + moisture → terrain type
-export function generate(cols: number, rows: number, seed = 1337): TileMap {
+// Layered: elevation + moisture → terrain type. The world is a single large
+// hexagon of `side` tiles per side, centered on axial (0, 0).
+export function generate(side: number, seed = 1337): TileMap {
   const elev = makeValueNoise(seed, 14);
   const elev2 = makeValueNoise(seed + 1, 6);
   const moist = makeValueNoise(seed + 2, 18);
   const detail = makeValueNoise(seed + 3, 3);
 
   const map: TileMap = new Map();
-  const cx = cols / 2;
-  const cy = rows / 2;
-  const maxR = Math.min(cx, cy);
+  const n = Math.max(1, side - 1);
 
-  for (let row = 0; row < rows; row++) {
-    for (let col = 0; col < cols; col++) {
-      // soft circular falloff so the world has coastline
-      const dx = (col - cx) / maxR;
-      const dy = (row - cy) / maxR;
-      const dist = Math.sqrt(dx * dx + dy * dy);
-      const falloff = Math.max(0, 1 - Math.pow(dist, 2.2) * 0.85);
+  for (const { q, r } of hexShapeAxials(side)) {
+    const dist = hexDistance(q, r, 0, 0) / n;
+    const falloff = Math.max(0, 1 - Math.pow(dist, 2.2) * 0.85);
 
-      let e = elev(col, row) * 0.65 + elev2(col, row) * 0.35;
-      e = e * falloff;
+    let e = elev(q, r) * 0.65 + elev2(q, r) * 0.35;
+    e = e * falloff;
 
-      const m = moist(col, row);
-      const d = detail(col, row);
+    const m = moist(q, r);
+    const d = detail(q, r);
 
-      let type: TerrainType;
-      if (e < 0.18) type = 'deep_water';
-      else if (e < 0.28) type = 'water';
-      else if (e < 0.34) type = 'sand';
-      else if (e < 0.62) {
-        if (m < 0.42) type = 'plains';
-        else if (m < 0.7) type = 'grass';
-        else type = 'forest';
-      } else if (e < 0.78) type = 'hills';
-      else type = 'mountain';
+    let type: TerrainType;
+    if (e < 0.18) type = 'deep_water';
+    else if (e < 0.28) type = 'water';
+    else if (e < 0.34) type = 'sand';
+    else if (e < 0.62) {
+      if (m < 0.42) type = 'plains';
+      else if (m < 0.7) type = 'grass';
+      else type = 'forest';
+    } else if (e < 0.78) type = 'hills';
+    else type = 'mountain';
 
-      const { q, r } = offsetToAxial(col, row);
-      map.set(key(q, r), {
-        q,
-        r,
-        col,
-        row,
-        type,
-        elev: e,
-        moist: m,
-        detail: d,
-      });
-    }
+    map.set(key(q, r), { q, r, type, elev: e, moist: m, detail: d });
   }
   return map;
 }

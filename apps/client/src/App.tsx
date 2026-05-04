@@ -25,8 +25,7 @@ type ShowCoordsMode = 'off' | 'select' | 'always';
 
 interface Tweaks {
   hexSize: number;
-  cols: number;
-  rows: number;
+  mapSide: number;
   panSpeed: number;
   zoomSpeed: number;
   showCoords: ShowCoordsMode;
@@ -36,8 +35,7 @@ interface Tweaks {
 
 const TWEAK_DEFAULTS: Tweaks = /*EDITMODE-BEGIN*/ {
   "hexSize": 22,
-  "cols": 100,
-  "rows": 100,
+  "mapSide": 16,
   "panSpeed": 1,
   "zoomSpeed": 1,
   "showCoords": "select",
@@ -46,10 +44,10 @@ const TWEAK_DEFAULTS: Tweaks = /*EDITMODE-BEGIN*/ {
 
 export function App() {
   const [tweaks, setTweak] = useTweaks<Tweaks>(TWEAK_DEFAULTS);
-  const { hexSize, cols, rows, panSpeed, zoomSpeed, showCoords, seed } = tweaks;
+  const { hexSize, mapSide, panSpeed, zoomSpeed, showCoords, seed } = tweaks;
 
   // Generate world
-  const tiles = useMemo(() => generate(cols, rows, seed), [cols, rows, seed]);
+  const tiles = useMemo(() => generate(mapSide, seed), [mapSide, seed]);
 
   // Selection (single)
   const [selected, setSelected] = useState<string | null>(null);
@@ -152,8 +150,6 @@ export function App() {
       <div className="stage" ref={stageRef}>
         <HexCanvas
           tiles={tiles}
-          cols={cols}
-          rows={rows}
           hexSize={hexSize}
           selected={selected ? new Set([selected]) : new Set()}
           hovered={hoveredKey}
@@ -175,8 +171,6 @@ export function App() {
           />
           <Minimap
             tiles={tiles}
-            cols={cols}
-            rows={rows}
             hexSize={hexSize}
             view={view}
             viewport={viewport}
@@ -204,8 +198,7 @@ export function App() {
           selected={selected}
           scale={view.scale}
           view={view}
-          cols={cols}
-          rows={rows}
+          mapSide={mapSide}
           onReset={handleReset}
         />
       </div>
@@ -221,20 +214,12 @@ export function App() {
             onChange={(v) => setTweak('hexSize', v)}
           />
           <TweakSlider
-            label="Columns"
-            value={cols}
-            min={20}
-            max={200}
-            step={5}
-            onChange={(v) => setTweak('cols', v)}
-          />
-          <TweakSlider
-            label="Rows"
-            value={rows}
-            min={20}
-            max={200}
-            step={5}
-            onChange={(v) => setTweak('rows', v)}
+            label="Map side"
+            value={mapSide}
+            min={4}
+            max={32}
+            step={1}
+            onChange={(v) => setTweak('mapSide', v)}
           />
           <TweakNumber
             label="Seed"

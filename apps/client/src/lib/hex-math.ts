@@ -82,3 +82,20 @@ export const NEIGHBORS: ReadonlyArray<readonly [number, number]> = [
 export function neighbors(q: number, r: number): Axial[] {
   return NEIGHBORS.map(([dq, dr]) => ({ q: q + dq, r: r + dr }));
 }
+
+export function hexDistance(q1: number, r1: number, q2: number, r2: number): number {
+  const dq = q1 - q2;
+  const dr = r1 - r2;
+  return (Math.abs(dq) + Math.abs(dr) + Math.abs(dq + dr)) / 2;
+}
+
+// Iterate every axial coord inside a hexagonal region of `side` tiles per side,
+// centered at (0, 0). Total tiles = 1 + 3*side*(side-1).
+export function* hexShapeAxials(side: number): Generator<Axial> {
+  const n = side - 1;
+  for (let q = -n; q <= n; q++) {
+    const rMin = Math.max(-n, -q - n);
+    const rMax = Math.min(n, -q + n);
+    for (let r = rMin; r <= rMax; r++) yield { q, r };
+  }
+}

@@ -21,8 +21,6 @@ export type ShowCoords = boolean | 'always';
 
 export interface HexCanvasProps {
   tiles: TileMap;
-  cols: number;
-  rows: number;
   hexSize?: number;
   selected: Set<string>;
   hovered: string | null;
@@ -60,8 +58,6 @@ type LOD = 'hi' | 'md' | 'lo';
 
 export function HexCanvas({
   tiles,
-  cols: _cols,
-  rows: _rows,
   hexSize = 22,
   selected,
   hovered,
@@ -74,8 +70,6 @@ export function HexCanvas({
   viewRef,
   onViewChange,
 }: HexCanvasProps) {
-  void _cols;
-  void _rows;
   const canvasRef = useRef<HTMLCanvasElement | null>(null);
   const containerRef = useRef<HTMLDivElement | null>(null);
   // view state lives in a ref to avoid re-rendering on every pan tick
@@ -586,8 +580,8 @@ export function HexCanvas({
         ctx.globalAlpha = 0.45;
         ctx.lineWidth = Math.max(0.3, size * 0.05);
         for (let i = 0; i < 3; i++) {
-          const ax = cx + ((((i * 37 + tile.col * 13) % 100) / 100 - 0.5) * size * 0.8);
-          const ay = cy + ((((i * 53 + tile.row * 17) % 100) / 100 - 0.5) * size * 0.8);
+          const ax = cx + ((((i * 37 + tile.q * 13) % 100) / 100 - 0.5) * size * 0.8);
+          const ay = cy + ((((i * 53 + tile.r * 17) % 100) / 100 - 0.5) * size * 0.8);
           ctx.beginPath();
           ctx.moveTo(ax, ay + size * 0.08);
           ctx.lineTo(ax, ay - size * 0.08);

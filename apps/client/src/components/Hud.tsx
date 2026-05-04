@@ -1,7 +1,7 @@
 // HUD: minimap, team legend, status bar, controls
 
 import { useEffect, useRef, useState, type CSSProperties } from 'react';
-import { SQRT3 } from '../lib/hex-math';
+import { hexToPixel } from '../lib/hex-math';
 import { PALETTE, type Tile, type TileMap } from '../lib/terrain';
 
 export interface Team {
@@ -85,12 +85,11 @@ export interface StatusBarProps {
   selected: string | null;
   scale: number;
   view: View;
-  cols: number;
-  rows: number;
+  mapSide: number;
   onReset: () => void;
 }
 
-export function StatusBar({ hovered, selected, scale, cols, rows, onReset }: StatusBarProps) {
+export function StatusBar({ hovered, selected, scale, mapSide, onReset }: StatusBarProps) {
   return (
     <div className="hud-card status-bar">
       <div className="status-group">
@@ -118,9 +117,9 @@ export function StatusBar({ hovered, selected, scale, cols, rows, onReset }: Sta
       </div>
       <div className="status-divider" />
       <div className="status-group">
-        <span className="status-label">grid</span>
+        <span className="status-label">map</span>
         <span className="status-val mono">
-          {cols}×{rows}
+          hex · {mapSide}
         </span>
       </div>
       <button className="status-btn" onClick={onReset} title="Reset view (R)">
@@ -147,8 +146,6 @@ export function StatusBar({ hovered, selected, scale, cols, rows, onReset }: Sta
 
 export interface MinimapProps {
   tiles: TileMap;
-  cols: number;
-  rows: number;
   hexSize: number;
   view: View | null;
   viewport: Viewport | null;
@@ -159,8 +156,6 @@ export interface MinimapProps {
 // Minimap renders a downsampled representation of terrain + viewport rect
 export function Minimap({
   tiles,
-  cols,
-  rows,
   hexSize,
   view,
   viewport,
@@ -187,14 +182,21 @@ export function Minimap({
     ctx.fillStyle = '#0a0e13';
     ctx.fillRect(0, 0, size.w, size.h);
 
-    // World→minimap mapping. Tiles in the main canvas live at world coords
-    // produced by hexToPixel (offsetToAxial layout: q=0 sits at the left edge,
-    // odd rows shift right by SQRT3/2 * hexSize, r=0 sits at y=0).
-    // The minimap is just that world, scaled and shifted by a small padding.
-    const worldW = (cols + 0.5) * SQRT3 * hexSize;
-    const worldH = (rows * 1.5 + 0.5) * hexSize;
-    const padOffX = (SQRT3 / 2) * hexSize; // half-hex left pad (odd-row shift)
-    const padOffY = hexSize;                // half-hex top pad (top vertex)
+    // World→minimap mapping. Compute the bounding box from actual tile pixel
+    // positions so the minimap works for any map shape (not just rectangular).
+    let minX = Infinity, minY = Infinity, maxX = -Infinity, maxY = -Infinity;
+    for (const t of tiles.values()) {
+      const { x, y } = hexToPixel(t.q, t.r, hexSize);
+      if (x < minX) minX = x;
+      if (y < minY) minY = y;
+      if (x > maxX) maxX = x;
+      if (y > maxY) maxY = y;
+    }
+    // Pad by one hex radius on each side so corner hexes aren't clipped.
+    minX -= hexSize; minY -= hexSize;
+    maxX += hexSize; maxY += hexSize;
+    const worldW = maxX - minX;
+    const worldH = maxY - minY;
     const pad = 6;
     const sx = (size.w - pad * 2) / worldW;
     const sy = (size.h - pad * 2) / worldH;
@@ -203,16 +205,15 @@ export function Minimap({
     const offY = pad + (size.h - pad * 2 - worldH * s) / 2;
 
     const worldToMinimap = (wx: number, wy: number): [number, number] => [
-      offX + (wx + padOffX) * s,
-      offY + (wy + padOffY) * s,
+      offX + (wx - minX) * s,
+      offY + (wy - minY) * s,
     ];
 
-    // draw a downsampled version: every other tile if grid is large
-    const step = cols * rows > 6000 ? 2 : 1;
+    // draw a downsampled version: every other tile if the map is large
+    const step = tiles.size > 6000 ? 2 : 1;
     for (const t of tiles.values()) {
-      if (step > 1 && ((t.col + t.row) & 1)) continue;
-      const wx = (SQRT3 * t.q + (SQRT3 / 2) * t.r) * hexSize;
-      const wy = 1.5 * t.r * hexSize;
+      if (step > 1 && ((t.q + t.r) & 1)) continue;
+      const { x: wx, y: wy } = hexToPixel(t.q, t.r, hexSize);
       const [x, y] = worldToMinimap(wx, wy);
       const pal = PALETTE[t.type];
       ctx.fillStyle = pal.fill;
@@ -223,8 +224,7 @@ export function Minimap({
     if (selected) {
       const t = tiles.get(selected);
       if (t) {
-        const wx = (SQRT3 * t.q + (SQRT3 / 2) * t.r) * hexSize;
-        const wy = 1.5 * t.r * hexSize;
+        const { x: wx, y: wy } = hexToPixel(t.q, t.r, hexSize);
         const [x, y] = worldToMinimap(wx, wy);
         ctx.fillStyle = teamColor;
         ctx.beginPath();
@@ -251,7 +251,7 @@ export function Minimap({
       ctx.fillStyle = 'rgba(255,255,255,0.06)';
       ctx.fillRect(rx, ry, rw, rh);
     }
-  }, [tiles, cols, rows, hexSize, view, viewport, selected, teamColor, size]);
+  }, [tiles, hexSize, view, viewport, selected, teamColor, size]);
 
   return (
     <div className="hud-card minimap">
