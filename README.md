@@ -144,3 +144,6 @@ ANC-Wargames/
 | `yarn build`       | Type-check and produce production builds for every workspace.                      |
 
 To target a single workspace: `yarn workspace @anc/client typecheck`, `yarn workspace @anc/server dev`, etc.
+
+
+Win shit
