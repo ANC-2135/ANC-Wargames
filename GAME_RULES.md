@@ -3,6 +3,8 @@
 > **Source**: `GameRules.docx` by ANC Productions
 > **Purpose**: Implementation-ready specification for software development. This document is the authoritative reference for game logic. Sections marked `> AMBIGUITY:` are open questions that require designer clarification before implementation.
 
+Manual review: Upon review we'll leave notes with @FIX, @TODO, @CLARIFICATION, @CONFIRM - When planning these will need to be addressed before moving forward.
+
 ---
 
 ## 1. Document conventions
