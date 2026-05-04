@@ -144,3 +144,103 @@ ANC-Wargames/
 | `yarn build`       | Type-check and produce production builds for every workspace.                      |
 
 To target a single workspace: `yarn workspace @anc/client typecheck`, `yarn workspace @anc/server dev`, etc.
+
+## Extra Steps Required
+
+### Git
+
+Ensure Git is installed
+
+### Visual Studio Code is recommended, but any code editor will work.
+
+Here's the full sequence:
+
+## Visual Studio Build Tools
+
+In an **elevated PowerShell** (right-click → Run as administrator):
+
+```powershell
+winget install Microsoft.VisualStudio.2022.BuildTools --override "--wait --passive --add Microsoft.VisualStudio.Workload.VCTools --includeRecommended"
+```
+
+This downloads ~2-4GB and takes 5-15 minutes. The `--passive` flag shows progress but doesn't require clicks.
+
+**If winget fails or you want the GUI:**
+1. Download from https://visualstudio.microsoft.com/visual-cpp-build-tools/
+2. Run the installer
+3. On the **Workloads** tab, tick **"Desktop development with C++"**
+4. Right panel → ensure these are ticked (usually default):
+   - MSVC v143 build tools
+   - Windows 11 SDK (latest)
+   - C++ CMake tools for Windows
+5. Click **Install**, wait, done
+
+## Step 2 — Install Python
+
+```powershell
+winget install Python.Python.3.12
+```
+
+Verify:
+```powershell
+python --version
+```
+Should show `Python 3.12.x`. If it says "not found", **close and reopen PowerShell** to refresh PATH.
+
+## Step 3 — Restart PowerShell
+
+Close all PowerShell windows and open a fresh one (doesn't need to be elevated for the next steps). This ensures the new tools are on PATH.
+
+## Step 4 — Configure npm/node-gyp
+
+```powershell
+npm config set python python
+```
+
+Verify node-gyp can find everything:
+```powershell
+npx node-gyp configure
+```
+(Run this from any folder — if it errors with "no binding.gyp" that's fine, it means it's working but there's nothing to configure here.)
+
+## Step 5 — Clean the failed install
+
+From your `toolbox-monorepo` root:
+
+```powershell
+yarn cache clean
+Remove-Item -Recurse -Force node_modules -ErrorAction SilentlyContinue
+Remove-Item -Force .yarn\install-state.gz -ErrorAction SilentlyContinue
+```
+
+If it's a yarn workspaces monorepo, also clear nested node_modules:
+```powershell
+Get-ChildItem -Path . -Filter node_modules -Recurse -Directory | Remove-Item -Recurse -Force
+```
+
+## Step 6 — Reinstall
+
+```powershell
+yarn install
+```
+
+Watch for `better-sqlite3` — should now compile cleanly. Takes a minute or two on first build.
+
+## Step 7 — Verify
+
+```powershell
+node -e "const db = require('better-sqlite3')(':memory:'); console.log('OK:', db.prepare('SELECT 1 as x').get());"
+```
+Should print `OK: { x: 1 }`.
+
+---
+
+**If it still fails**, share the new build.log and the output of:
+```powershell
+node --version
+npm --version
+python --version
+where cl    # MSVC compiler — should return a path inside Visual Studio
+```
+
+That'll tell us exactly what's still missing.
